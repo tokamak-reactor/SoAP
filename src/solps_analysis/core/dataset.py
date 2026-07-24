@@ -51,6 +51,10 @@ class SolpsWatch:
     numerics: dict | None = None
     run_log: dict | None = None
 
+    # Composition
+    b2_comp: Any = None
+    eirene_comp: Any = None
+
     @classmethod
     def from_directory(
         cls,
@@ -244,6 +248,109 @@ class SolpsWatch:
 
     def list_all_files(self) -> list[str]:
         return sorted(self._file_index.keys())
+
+    def construct(self, name: str) -> SolpsVariable | None:
+        """Compute a derived physical quantity by name.
+        
+        Uses the quantity registry (@quantity decorator).
+        Automatically loads composition data if needed.
+        """
+        from solps_analysis.construct.builtin import basic  # noqa: F401
+        from solps_analysis.construct.registry import construct_quantity
+        from solps_analysis.construct.composition import (
+            build_b2_composition,
+            build_eirene_composition,
+        )
+        from solps_analysis.io.b2fstate_reader import read_b2fstate_full
+
+        # Build compositions if not yet available
+        if self.b2_comp is None:
+            try:
+                fstate = read_b2fstate_full(str(self.path))
+                self.b2_comp = build_b2_composition(fstate)
+            except Exception:
+                pass
+        if self.eirene_comp is None and self.neut is not None:
+            try:
+                self.eirene_comp = build_eirene_composition(self.neut)
+            except Exception:
+                pass
+
+        # Auto-assemble na if needed and not present
+        if self.get("na") is None:
+            self._assemble_na()
+
+        var = construct_quantity(
+            name=name,
+            watch=self,
+            grid=self.grid,
+            comp=self.b2_comp,
+            eirene_comp=self.eirene_comp,
+        )
+        if var is not None:
+            self._variables[name] = var
+        return var
+
+    def _assemble_na(self) -> None:
+        """Assemble na matrix from B2 species density files.
+        
+        Looks for files matching b2npc*_na_NNN or b2npco_na_NNN.
+        """
+        import re
+        na_vars = {}
+        for vname in self._file_index:
+            # Match: b2npc11_na_NNN or b2npco_na_NNN (B2 species density)
+            m = re.match(r"^(b2npc\d+|b2npco)_na_(\d{3})$", vname)
+            if m:
+                idx = int(m.group(2))
+                na_vars[idx] = self._file_index[vname]
+
+        if not na_vars:
+            return
+
+        # Read, convert to unstructured, and stack
+        from solps_analysis.io.data_readers import read_watch_file
+        cols = []
+        max_idx = max(na_vars.keys())
+        for i in range(max_idx + 1):
+            if i in na_vars:
+                data = read_watch_file(na_vars[i])
+                # Convert 2D structured → 1D unstructured
+                if data.ndim == 2 and self.grid.imap_cv is not None:
+                    data = self._structured_to_unstructured(data)
+                cols.append(data)
+            else:
+                if cols:
+                    cols.append(np.zeros(cols[0].shape if cols else 1))
+                else:
+                    cols.append(np.zeros(self.grid.n_cells if self.grid.n_cells else 1))
+
+        if cols:
+            na_data = np.column_stack(cols)
+            self._variables["na"] = SolpsVariable(
+                data=np.ascontiguousarray(na_data, dtype=np.float64),
+                meta=VariableMeta(
+                    name="na",
+                    unit="m⁻³",
+                    description="Particle density (assembled from species files)",
+                    location="cell",
+                    is_constructed=True,
+                ),
+            )
+
+    def construct_all(self) -> list[str]:
+        """Compute all registered quantities. Returns list of computed names."""
+        from solps_analysis.construct.builtin import basic  # noqa: F401
+        from solps_analysis.construct.registry import list_quantities
+
+        computed = []
+        for name in list_quantities():
+            try:
+                if self.construct(name) is not None:
+                    computed.append(name)
+            except Exception:
+                pass
+        return computed
 
     def __getitem__(self, name: str) -> SolpsVariable:
         var = self.get(name)
