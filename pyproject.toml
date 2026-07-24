@@ -1,0 +1,51 @@
+[project]
+name = "solps-analysis"
+version = "0.1.0"
+description = "SOLPS-ITER data analysis and visualization package"
+authors = [
+    {name = "SPbPU Plasma Physics Group", email = "kukushkin@spbstu.ru"},
+]
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "xarray>=2023.0",
+    "matplotlib>=3.8",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "ruff>=0.1",
+    "ipython",
+    "ipywidgets",
+    "ipympl",
+]
+ssh = [
+    "paramiko>=3.0",
+]
+docs = [
+    "mkdocs",
+    "mkdocstrings",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
