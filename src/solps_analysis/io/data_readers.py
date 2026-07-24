@@ -25,10 +25,17 @@ def read_structured_dat(path: str | Path) -> np.ndarray:
     Column 0 (index -1) is discarded as it contains boundary data.
     """
     path = Path(path)
-    data = np.loadtxt(path, skiprows=1)
+    # Read all data (skip header). Use genfromtxt for robustness.
+    data = np.genfromtxt(path, skip_header=1, invalid_raise=False)
     if data.ndim == 1:
         data = data[np.newaxis, :]
+    # Drop any trailing NaN rows from genfromtxt
+    mask = ~np.isnan(data).all(axis=1)
+    if mask.sum() < data.shape[0]:
+        data = data[mask]
+    # data[:, 0] is the row index, data[:, 1:] are the values
     values = data[:, 1:]
+    # Flip so the first data row corresponds to the highest row index
     values = np.flipud(values)
     return values
 
@@ -46,19 +53,48 @@ def read_unstructured_dat(path: str | Path) -> np.ndarray:
     return data[:, 1]
 
 
+def _raw_to_structured(raw: np.ndarray) -> np.ndarray:
+    """Convert a raw 2D array (row_index + values) to structured format.
+
+    Drops the first column (row index) and flips vertically
+    so the highest row index comes first.
+    """
+    values = raw[:, 1:]
+    values = np.flipud(values)
+    return values
+
+
 def read_watch_file(filepath: str | Path) -> np.ndarray:
     """Auto-detect and read a single .dat file.
 
     Detection: if 2 columns -> unstructured; if >2 -> structured.
+    Handles files where the header has fewer columns than the data.
     """
     filepath = Path(filepath)
-    raw = np.loadtxt(filepath)
+    # First try: read with header skip (handles structured format)
+    try:
+        raw = np.genfromtxt(filepath, skip_header=1, invalid_raise=False)
+        if raw.ndim == 0:
+            raw = np.genfromtxt(filepath, invalid_raise=False)
+    except Exception:
+        raw = np.genfromtxt(filepath, invalid_raise=False)
+
+    if raw.ndim == 0:
+        raise ValueError(f"Cannot parse {filepath}")
+
+    # Remove trailing NaN rows
+    if raw.ndim == 2:
+        mask = ~np.isnan(raw).all(axis=1)
+        if mask.sum() < raw.shape[0]:
+            raw = raw[mask]
+
     if raw.ndim == 1:
-        return np.array([raw[1]]) if len(raw) == 2 else raw
+        return np.array([raw[1]]) if len(raw) > 1 else raw
+
     if raw.shape[1] == 2:
         return raw[:, 1]
     else:
-        return read_structured_dat(filepath)
+        return _raw_to_structured(raw)
 
 
 def _parse_dat_filename(filename: str) -> tuple[str, int | None] | None:

@@ -94,17 +94,11 @@ class SolpsWatch:
 
     @staticmethod
     def _find_and_read_geometry(path: Path) -> GridTopology:
-        """Find and read b2fgmtry, searching up the tree."""
-        # Try different locations
-        candidates = [
-            path / "b2fgmtry",
-            path.parent / "b2fgmtry",
-            path.parent.parent / "b2fgmtry",
-        ]
-        for c in candidates:
-            if c.exists():
-                return read_geometry(str(c))
-        raise FileNotFoundError(f"No b2fgmtry found for {path}")
+        """Find b2fgmtry searching up the directory tree."""
+        try:
+            return read_geometry(str(path))
+        except FileNotFoundError:
+            raise
 
     def _detect_eirene(self) -> None:
         """Check if EIRENE data is present (fort.44, fort.46, input.dat)."""
@@ -146,17 +140,22 @@ class SolpsWatch:
     def _read_dat_file(self, file_path: str) -> np.ndarray:
         """Read a .dat file using the appropriate reader.
 
-        If the grid is structured (stored nx, ny), convert 2D → 1D.
+        If the grid is structured, convert 2D → 1D using imap_cv.
         """
-        # First read raw
         from solps_analysis.io.data_readers import read_watch_file
         values = read_watch_file(file_path)
 
-        # If the grid has structured mapping, convert 2D → unstructured 1D
+        # If the grid has structured mapping and data is 2D, convert
         if self.grid.is_structured and self.grid.imap_cv is not None and values.ndim == 2:
-            # values is (ny+2, nx+2) after read_structured_dat
-            if values.shape == (self.grid.ny + 2, self.grid.nx + 2):
+            ny_plus2, nx_plus2 = values.shape
+            expected_ny = self.grid.ny + 2
+            expected_nx = self.grid.nx + 2
+            if ny_plus2 == expected_ny and nx_plus2 == expected_nx:
                 values = self._structured_to_unstructured(values)
+            else:
+                # Data doesn't match grid dimensions — try transposing
+                if ny_plus2 == expected_nx and nx_plus2 == expected_ny:
+                    values = self._structured_to_unstructured(values.T)
 
         values = np.ascontiguousarray(values, dtype=np.float64)
         return values
