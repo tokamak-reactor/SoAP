@@ -77,6 +77,84 @@ class GridTopology:
     cv_reg: np.ndarray | None = None   # (n_cells,) region numbers
     cv_conn: np.ndarray | None = None  # (n_cells,) connection length
 
+    # --- Additional connectivity (loaded from unstructured file) ---
+    vx_fc_p: np.ndarray | None = None  # (n_vertices, 2) pointer to vx_fc
+    vx_fc: np.ndarray | None = None    # flat face list per vertex
+    vx_cv_p: np.ndarray | None = None  # (n_vertices, 2) pointer to vx_cv
+    vx_cv: np.ndarray | None = None    # flat cell list per vertex
+    cv_vx_p: np.ndarray | None = None  # (n_cells, 2) pointer to cv_vx
+    cv_vx: np.ndarray | None = None    # flat vertex list per cell
+
+    # --- Additional geometry arrays ---
+    fc_qalf: np.ndarray | None = None  # (n_faces, 2) cos/sin of alpha
+    fc_pbs: np.ndarray | None = None   # (n_faces,) magnetic contact area
+    cv_eb: np.ndarray | None = None    # (n_cells, 3) unit vector along B
+    intcell_p: np.ndarray | None = None  # interpolation factors (poloidal)
+    intcell_r: np.ndarray | None = None  # interpolation factors (radial)
+
+    # --- Derived arrays (computed in regions module) ---
+    fc_fs: np.ndarray | None = None    # (n_faces,) flux surface index (computed)
+    fc_ft: np.ndarray | None = None    # (n_faces,) flux tube index (computed)
+    fc_theta: np.ndarray | None = None # (n_faces,) poloidal coordinate (computed)
+    fc_r: np.ndarray | None = None     # (n_faces,) radial coordinate (computed)
+    cv_theta_n: np.ndarray | None = None  # (n_cells,) normalized poloidal coord
+    fc_theta_n: np.ndarray | None = None  # (n_faces,) normalized poloidal coord
+    ft_conn: np.ndarray | None = None  # (n_flux_tubes,) connection length
+    cv_lbl_len: np.ndarray | None = None  # (n_cells,) boundary distance
+    fc_lbl_len: np.ndarray | None = None  # (n_faces,) boundary distance
+    fc_lbl_group: np.ndarray | None = None  # (n_faces,) grouped boundary label
+    fc_lbl_group_len: np.ndarray | None = None  # (n_faces,) grouped boundary distance
+
+    # --- Derived regions (computed in regions module) ---
+    xp_vx: np.ndarray | None = None     # X-point vertex indices
+    fs_sep: np.ndarray | None = None    # flux surfaces at separatrix
+    fs_sep2: np.ndarray | None = None   # second separatrix flux surfaces (diverted)
+    sep_vx: np.ndarray | None = None    # separatrix vertices
+    sep_fc: np.ndarray | None = None    # separatrix faces
+    sep_fc_sol: np.ndarray | None = None  # separatrix faces at SOL boundary
+    sep2_vx: np.ndarray | None = None
+    sep2_fc: np.ndarray | None = None
+    inner_midplane_cells: np.ndarray | None = None
+    outer_midplane_cells: np.ndarray | None = None
+    fc_inner_midplane: np.ndarray | None = None
+    fc_outer_midplane: np.ndarray | None = None
+    inner_midplane_cells_sol: np.ndarray | None = None
+    outer_midplane_cells_sol: np.ndarray | None = None
+    inner_target_cells: np.ndarray | None = None
+    outer_target_cells: np.ndarray | None = None
+    inner_target_faces: np.ndarray | None = None
+    outer_target_faces: np.ndarray | None = None
+    inner_top_target_cells: np.ndarray | None = None
+    outer_top_target_cells: np.ndarray | None = None
+    inner_top_target_faces: np.ndarray | None = None
+    outer_top_target_faces: np.ndarray | None = None
+    inner_active_target_cells: np.ndarray | None = None
+    outer_active_target_cells: np.ndarray | None = None
+    inner_active_target_faces: np.ndarray | None = None
+    outer_active_target_faces: np.ndarray | None = None
+    inner_inactive_target_cells: np.ndarray | None = None
+    outer_inactive_target_cells: np.ndarray | None = None
+    inner_inactive_target_faces: np.ndarray | None = None
+    outer_inactive_target_faces: np.ndarray | None = None
+    separatrix_cells: np.ndarray | None = None
+    core_sep_faces: np.ndarray | None = None
+    cv_or: np.ndarray | None = None    # (n_cells,) orientation
+    fc_or: np.ndarray | None = None    # (n_faces,) orientation
+    bp_dir: int = 0  # poloidal B direction (±1)
+    bt_dir: int = 0  # toroidal B direction (±1)
+    wall_faces: np.ndarray | None = None
+    wall_cells: np.ndarray | None = None
+    wall_cells_vol: np.ndarray | None = None
+    wall_cells_len: np.ndarray | None = None
+    fcs_boundary: list | None = None
+    cvs_boundary: list | None = None
+    cvs_close_boundary: list | None = None
+    vx_bound_ends: np.ndarray | None = None
+    is_cross_outmidpl: np.ndarray | None = None
+    is_cross_inmidpl: np.ndarray | None = None
+    is_cross_outmidpl_cv: np.ndarray | None = None
+    is_cross_inmidpl_cv: np.ndarray | None = None
+
     # --- Structured grid mapping (only for structured or converted grids) ---
     imap_cv: np.ndarray | None = None  # (nx+2, ny+2) cell index mapping
     imap_fcx: np.ndarray | None = None # (nx+2, ny+2) x-face mapping

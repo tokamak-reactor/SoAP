@@ -389,11 +389,16 @@ def _load_into_grid(raw: dict[str, Any]) -> GridTopology:
     for src_name, dst_name in [
         ("cvX", "cv_x"), ("cvY", "cv_y"), ("cvVol", "cv_vol"),
         ("cvSz", "cv_sz"), ("cvHz", "cv_hz"), ("cvBb", "cv_bb"),
+        ("cvEb", "cv_eb"),
         ("fcX", "fc_x"), ("fcY", "fc_y"), ("fcS", "fc_s"),
         ("fcHc", "fc_hc"), ("fcHt", "fc_ht"), ("fcBb", "fc_bb"),
         ("fcLbl", "fc_lbl"), ("fcReg", "fc_reg"),
+        ("fcQalf", "fc_qalf"), ("fcPbs", "fc_pbs"),
         ("vxX", "vx_x"), ("vxY", "vx_y"), ("vxFpsi", "vx_fpsi"),
         ("cvFcP", "cv_fc_p"), ("cvFc", "cv_fc"),
+        ("cvVxP", "cv_vx_p"), ("cvVx", "cv_vx"),
+        ("vxFcP", "vx_fc_p"), ("vxFc", "vx_fc"),
+        ("vxCvP", "vx_cv_p"), ("vxCv", "vx_cv"),
         ("fcCv", "fc_cv"), ("fcVx", "fc_vx"),
         ("cvFt", "cv_ft"), ("cvReg", "cv_reg"),
         ("ftCvP", "ft_cv_p"), ("ftCv", "ft_cv"),
@@ -401,6 +406,7 @@ def _load_into_grid(raw: dict[str, Any]) -> GridTopology:
         ("ftReg", "ft_reg"), ("cvConn", "cv_conn"),
         ("fsFcP", "fs_fc_p"), ("fsFc", "fs_fc"),
         ("fsPsi", "fs_psi"),
+        ("intcellP", "intcell_p"), ("intcellR", "intcell_r"),
         ("imapCv", "imap_cv"), ("imapFcx", "imap_fcx"), ("imapFcy", "imap_fcy"),
     ]:
         if src_name in raw:
@@ -412,6 +418,37 @@ def _load_into_grid(raw: dict[str, Any]) -> GridTopology:
                     setattr(grid, dst_name, val)
             else:
                 setattr(grid, dst_name, np.asarray(val, dtype=np.float64 if "float" in str(type(val)) else np.int32))
+
+    # Reshape critical 2D arrays that may be stored as 1D in the file
+    # These are stored column-major (Fortran order) in the file
+    # Note: fcVx, fcCv etc are already mapped and must NOT be reshaped here
+    # (they are read as separate _p arrays + flat lists)
+    for name, expected_cols in [("fc_cv", 2), ("fc_vx", 2), ("fc_bb", 4), ("cv_bb", 4),
+                                 ("fc_hc", 2), ("fc_qalf", 2), ("fc_qbet", 2), ("fc_qgam", 2),
+                                 ("cv_eb", 3), ("cv_qgam", 2),
+                                 ("cv_fc_p", 2), ("ft_cv_p", 2), ("ft_fc_p", 2),
+                                 ("fs_fc_p", 2), ("vx_fc_p", 2), ("vx_cv_p", 2), ("cv_vx_p", 2),
+                                 ("vx_bb", 4)]:
+        arr = getattr(grid, name, None)
+        if arr is not None and arr.ndim == 1 and arr.size > 0:
+            n_rows = arr.size // expected_cols
+            if n_rows * expected_cols == arr.size:
+                setattr(grid, name, arr.reshape(n_rows, expected_cols, order='F'))
+
+    # Convert connectivity arrays from 1-based (Fortran) to 0-based (Python)
+    for name in ["fc_cv", "fc_vx", "cv_fc", "cv_ft", "cv_vx", "ft_cv", "ft_fc", "fs_fc",
+                 "vx_fc", "vx_cv"]:
+        arr = getattr(grid, name, None)
+        if arr is not None and np.any(arr > 0):
+            setattr(grid, name, np.where(arr > 0, arr - 1, arr))
+
+    # Convert pointer arrays from 1-based to 0-based (subtract 1 from start column)
+    for name in ["cv_fc_p", "ft_cv_p", "ft_fc_p", "fs_fc_p", "cv_vx_p", "vx_fc_p", "vx_cv_p"]:
+        arr = getattr(grid, name, None)
+        if arr is not None and arr.ndim == 2 and np.any(arr[:, 0] > 0):
+            arr = arr.copy()
+            arr[:, 0] = np.where(arr[:, 0] > 0, arr[:, 0] - 1, arr[:, 0])
+            setattr(grid, name, arr)
 
     return grid
 
