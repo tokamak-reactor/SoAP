@@ -1,4 +1,4 @@
-"""SolpsDataset — the main container for SOLPS-ITER watch analysis results."""
+"""SolpsDataset — main container for SOLPS-ITER watch analysis results."""
 
 from __future__ import annotations
 
@@ -15,6 +15,11 @@ from solps_analysis.io.data_readers import (
     read_structured_dat,
     read_unstructured_dat,
     scan_output_directory,
+    read_watch_file,
+)
+from solps_analysis.io.b2fstate_reader import (
+    extract_state_arrays,
+    get_plasma_composition,
 )
 
 
@@ -22,32 +27,29 @@ from solps_analysis.io.data_readers import (
 class SolpsWatch:
     """Represents a single SOLPS-ITER watch (one time snapshot).
 
-    This is the main entry point for analyzing a watch.
-
-    Typical usage::
+    Usage::
 
         watch = SolpsWatch.from_directory("/path/to/watch")
-
-        # Access geometry
-        print(watch.grid.n_cells)
-
-        # Access a variable
-        te = watch.get("te_eV")
-        print(te.data.shape)
-
-        # List all available variables
         print(watch.list_variables())
+        te = watch["te_eV"]
     """
 
     path: Path
     grid: GridTopology
     eirene_flag: bool = False
+    plasma_composition: dict | None = None
 
-    # Variable storage: {var_name: SolpsVariable}
     _variables: dict[str, SolpsVariable] = field(default_factory=dict)
-
-    # File index: {var_name: file_path}
     _file_index: dict[str, str] = field(default_factory=dict)
+
+    # EIRENE data
+    neut: dict | None = None
+    ft46: dict | None = None
+    input_file: dict | None = None
+
+    # Numerical data
+    numerics: dict | None = None
+    run_log: dict | None = None
 
     @classmethod
     def from_directory(
@@ -55,31 +57,40 @@ class SolpsWatch:
         path: str | Path,
         load_variables: bool = True,
         variables: list[str] | None = None,
+        load_eirene: bool = False,
     ) -> "SolpsWatch":
         """Load a complete watch from its directory.
 
         Args:
-            path: Path to the watch directory (contains output/, b2fgmtry, etc.)
-            load_variables: If True, scan and load .dat files
-            variables: If given, only load these specific variables (partial read)
+            path: Path to the watch directory.
+            load_variables: Scan and load .dat files from output/.
+            variables: If given, only load these specific variables.
+            load_eirene: Also load EIRENE and numerical data.
         """
         path = Path(path).expanduser().resolve()
 
-        # 1. Read geometry
+        # 1. Read geometry (searches up directory tree)
         try:
-            grid = cls._find_and_read_geometry(path)
+            grid = read_geometry(str(path))
         except FileNotFoundError:
-            # Try loading just b2fstati for minimal info
             grid = read_b2fstati(path)
-            if grid.n_cells == 0:
-                raise
 
         watch = cls(path=path, grid=grid)
-
-        # 2. Detect version and grid type
         watch._detect_eirene()
 
-        # 3. Scan and load variables
+        # 2. Read plasma composition from b2fstati
+        try:
+            fstate_raw = read_b2fstati(str(path))
+            if hasattr(fstate_raw, 'n_species') and fstate_raw.n_species > 0:
+                watch.plasma_composition = get_plasma_composition({
+                    "zamax": fstate_raw.species_charge_max,
+                    "am": fstate_raw.species_mass,
+                    "zn": fstate_raw.species_n,
+                })
+        except Exception:
+            pass
+
+        # 3. Scan and load variables from output/
         if load_variables:
             output_dir = path / "output"
             if output_dir.is_dir():
@@ -90,36 +101,85 @@ class SolpsWatch:
                 else:
                     watch._load_all()
 
+        # 4. Load EIRENE and numerical data
+        if load_eirene:
+            watch._load_eirene_data()
+            watch._load_numerical_data()
+
         return watch
 
-    @staticmethod
-    def _find_and_read_geometry(path: Path) -> GridTopology:
-        """Find b2fgmtry searching up the directory tree."""
-        try:
-            return read_geometry(str(path))
-        except FileNotFoundError:
-            raise
+    def _load_eirene_data(self) -> None:
+        """Load EIRENE data (fort.44, fort.46, input.dat)."""
+        from solps_analysis.io.eirene_reader import read_fort44, read_fort46
+        from solps_analysis.io.input_reader import read_eirene_input, read_user_parameters
+        import warnings
+
+        ft44_path = self.path / "fort.44"
+        ft46_path = self.path / "fort.46"
+        input_path = self.path / "input.dat"
+
+        if ft44_path.exists():
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    self.neut = read_fort44(str(ft44_path))
+            except Exception as e:
+                pass
+
+        if ft46_path.exists():
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    self.ft46 = read_fort46(str(ft46_path))
+            except Exception as e:
+                pass
+
+        if input_path.exists():
+            try:
+                self.input_file = read_eirene_input(str(input_path))
+            except Exception:
+                pass
+
+        self.eirene_flag = (self.neut is not None and self.ft46 is not None)
+
+    def _load_numerical_data(self) -> None:
+        """Load numerical parameters and run log."""
+        from solps_analysis.io.run_log_reader import read_run_log, read_numerics_parameters
+
+        run_log_path = self.path / "run.log"
+        if run_log_path.exists():
+            try:
+                self.run_log = read_run_log(str(run_log_path))
+            except Exception:
+                pass
+
+        b2num_path = self.path / "b2.numerics.parameters"
+        if b2num_path.exists():
+            try:
+                self.numerics = read_numerics_parameters(str(b2num_path))
+            except Exception:
+                pass
 
     def _detect_eirene(self) -> None:
-        """Check if EIRENE data is present (fort.44, fort.46, input.dat)."""
-        has_ft44 = (self.path.parent / "fort.44").exists()
-        has_ft46 = (self.path.parent / "fort.46").exists()
-        has_input = (self.path / "input.dat").exists() or (self.path.parent / "input.dat").exists()
-        self.eirene_flag = has_ft44 and has_ft46 and has_input
+        """Check if EIRENE files are present."""
+        has_ft44 = (self.path / "fort.44").exists()
+        has_ft46 = (self.path / "fort.46").exists()
+        has_input = (self.path / "input.dat").exists()
+        self.eirene_flag = has_ft44 and has_ft46
 
     def _load_all(self) -> None:
-        """Load all variables found in the output/ directory."""
+        """Load all variables from output directory."""
         for var_name, file_path in self._file_index.items():
             try:
                 data = self._read_dat_file(file_path)
                 meta = VariableMeta(
                     name=var_name,
                     location=self._infer_location(var_name),
-                    source_file=file_path,
+                    source_file=str(file_path),
                 )
                 self._variables[var_name] = SolpsVariable(data=data, meta=meta)
-            except Exception as e:
-                pass  # Skip unreadable files
+            except Exception:
+                pass
 
     def _load_selected(self, var_names: list[str]) -> None:
         """Load only selected variables."""
@@ -131,64 +191,44 @@ class SolpsWatch:
                     meta = VariableMeta(
                         name=var_name,
                         location=self._infer_location(var_name),
-                        source_file=file_path,
+                        source_file=str(file_path),
                     )
                     self._variables[var_name] = SolpsVariable(data=data, meta=meta)
-                except Exception as e:
+                except Exception:
                     pass
 
     def _read_dat_file(self, file_path: str) -> np.ndarray:
-        """Read a .dat file using the appropriate reader.
-
-        If the grid is structured, convert 2D → 1D using imap_cv.
-        """
-        from solps_analysis.io.data_readers import read_watch_file
+        """Read a .dat file and convert to 1D if structured grid."""
         values = read_watch_file(file_path)
 
-        # If the grid has structured mapping and data is 2D, convert
+        # Convert 2D → 1D for structured grids
         if self.grid.is_structured and self.grid.imap_cv is not None and values.ndim == 2:
-            ny_plus2, nx_plus2 = values.shape
-            expected_ny = self.grid.ny + 2
-            expected_nx = self.grid.nx + 2
-            if ny_plus2 == expected_ny and nx_plus2 == expected_nx:
+            ny, nx = values.shape
+            ey, ex = self.grid.ny + 2, self.grid.nx + 2
+            if ny == ey and nx == ex:
                 values = self._structured_to_unstructured(values)
-            else:
-                # Data doesn't match grid dimensions — try transposing
-                if ny_plus2 == expected_nx and nx_plus2 == expected_ny:
-                    values = self._structured_to_unstructured(values.T)
+            elif ny == ex and nx == ey:
+                values = self._structured_to_unstructured(values.T)
 
-        values = np.ascontiguousarray(values, dtype=np.float64)
-        return values
+        return np.ascontiguousarray(values, dtype=np.float64)
 
     def _structured_to_unstructured(self, data_2d: np.ndarray) -> np.ndarray:
-        """Convert structured 2D data to unstructured 1D using imapCv mapping.
-
-        data_2d: (ny+2, nx+2) — already flipped (row 0 = outermost flux surface)
-        """
+        """Convert structured 2D to unstructured 1D via imap_cv."""
         if self.grid.imap_cv is None:
             return data_2d.ravel()
 
         ncells = self.grid.n_cells
         result = np.zeros(ncells, dtype=np.float64)
-        imap = self.grid.imap_cv  # (nx+2, ny+2)
-        ny, nx = data_2d.shape
-
-        for j in range(ny):  # j = poloidal (iy)
-            for i in range(nx):  # i = radial (ix)
+        imap = self.grid.imap_cv
+        for j in range(data_2d.shape[0]):
+            for i in range(data_2d.shape[1]):
                 idx = imap[i, j]
                 if idx != 0:
                     result[idx - 1] = data_2d[j, i]
-
         return result
 
     def _infer_location(self, var_name: str) -> str:
-        """Infer whether a variable is cell-centered or face-centered."""
-        # Heuristic: face data often has _r, _th, _mdf_, _fht, _fhe etc.
-        # Cell data: na, sna, resco, te_eV, ne, etc.
-        face_indicators = [
-            "_r", "_th", "_fht", "_fhe", "_fhi", "_fhn",
-            "_mdf", "_fna", "_fnax", "_fnay",
-        ]
+        face_indicators = ["_r", "_th", "_fht", "_fhe", "_fhi", "_fhn", "_mdf", "_fna", "_fnax", "_fnay"]
         for indicator in face_indicators:
             if indicator in var_name:
                 return "face_r" if "_th" not in var_name else "face_th"
@@ -197,21 +237,18 @@ class SolpsWatch:
     # --- Public API ---
 
     def get(self, name: str) -> SolpsVariable | None:
-        """Get a variable by name."""
         return self._variables.get(name)
 
     def list_variables(self) -> list[str]:
-        """List all loaded variables."""
         return sorted(self._variables.keys())
 
     def list_all_files(self) -> list[str]:
-        """List all available variable file names (loaded or not)."""
         return sorted(self._file_index.keys())
 
     def __getitem__(self, name: str) -> SolpsVariable:
         var = self.get(name)
         if var is None:
-            raise KeyError(f"Variable '{name}' not found. Available: {self.list_variables()}")
+            raise KeyError(f"Variable '{name}' not found")
         return var
 
     def __repr__(self) -> str:
