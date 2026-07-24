@@ -101,55 +101,51 @@ def compute_regions_structured(grid: GridTopology) -> dict:
     if nsep2 == nsep:
         nsep2 = 0
 
-    # --- 5. Find OMP radial column ---
-    # Walk radially using rightix array, starting from SOL at the OMP row
+    # --- 5. Find OMP and IMP radial columns ---
+    # MATLAB_SPb approach:
+    # 1. Find column (ix) where |Bz| is extremal in the SOL region
+    # 2. Walk poloidally at that ix to get all cells in the radial column
     outer_midplane_cells = []
     inner_midplane_cells = []
 
-    # Find OMP row: last row with core+SOL but no PFR
-    rightix = grid._rightix if hasattr(grid, '_rightix') else None
-    iy_omp = 0
-    for iy in range(ny, 1, -1):
-        has_core = has_sol = has_pfr = False
-        for ix in range(2, nx + 1):
-            c = imap[ix, iy]
-            if c == 0: continue
-            reg = grid.cv_reg[c - 1] if grid.cv_reg is not None else 0
-            if reg in (1, 5): has_core = True
-            elif reg in (2, 6): has_sol = True
-            elif reg in (3, 4, 7, 8): has_pfr = True
-        if has_core and has_sol and not has_pfr:
-            iy_omp = iy
-            break
-
-    if iy_omp == 0:
-        iy_omp = ny // 2 + 1
-
-    # Walk radially from left to right at iy_omp using rightix
-    if rightix is not None:
-        # Start from the first cell at iy_omp
-        start_ix = 2
-        while start_ix <= nx + 1 and imap[start_ix, iy_omp] == 0:
-            start_ix += 1
-        if start_ix <= nx + 1:
-            ix = start_ix
-            while ix <= nx + 1:
-                c = imap[ix, iy_omp]
+    if grid.cv_bb is not None:
+        # Map Bz back to (ix, iy) grid
+        bz_2d = np.zeros((nx + 2, ny + 2), dtype=np.float64)
+        for ix in range(nx + 2):
+            for iy in range(ny + 2):
+                c = imap[ix, iy]
                 if c > 0:
-                    outer_midplane_cells.append(c - 1)
-                    inner_midplane_cells.append(c - 1)
-                # Move to next cell radially
-                if rightix[ix, iy_omp] <= nx + 1:
-                    ix = rightix[ix, iy_omp] + 2
-                else:
-                    break
-    else:
-        # Fallback: all cells at OMP row
-        for ix in range(2, nx + 1):
-            c = imap[ix, iy_omp]
+                    bz_2d[ix, iy] = grid.cv_bb[c - 1, 2]
+
+        # Find OMP column (ix_nout): cell with minimal |Bz| in SOL (cvReg 2 or 6)
+        # Find IMP column (ix_nin): cell with maximal |Bz| in SOL
+        min_bz = float('inf')
+        max_bz = -float('inf')
+        ix_nout = 2
+        ix_nin = 2
+
+        for iy in range(2, ny + 1):
+            for ix in range(2, nx + 1):
+                c = imap[ix, iy]
+                if c == 0: continue
+                reg = grid.cv_reg[c - 1] if grid.cv_reg is not None else 0
+                if reg in (2, 6):  # SOL region
+                    abz = abs(bz_2d[ix, iy])
+                    if abz > 0 and abz < min_bz:
+                        min_bz = abz
+                        ix_nout = ix
+                    if abz > max_bz:
+                        max_bz = abz
+                        ix_nin = ix
+
+        # Walk poloidally at ix_nout and ix_nin: all cells with this ix
+        for iy in range(ny + 2):  # 0-indexed: ny+2 = 34 rows
+            c = imap[ix_nout, iy]
             if c > 0:
-                outer_midplane_cells.append(c - 1)
-                inner_midplane_cells.append(c - 1)
+                outer_midplane_cells.append(int(c - 1))
+            c2 = imap[ix_nin, iy]
+            if c2 > 0:
+                inner_midplane_cells.append(int(c2 - 1))
 
     # --- 6. Find targets ---
     # Inner target: cells at iy=2 (bottom), inner side (left of core)
