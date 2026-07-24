@@ -20,6 +20,7 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components, breadth_first_order
 
 from solps_analysis.core.grid import GridTopology
+from solps_analysis.core.regions_structured import compute_regions_structured as _compute_regions_structured
 
 
 # =========================================================================
@@ -733,6 +734,12 @@ def _compute_orientation(grid: GridTopology) -> None:
 
 def compute_all_regions(grid: GridTopology) -> dict[str, Any]:
     """Run all region computations in order. Returns regions dict."""
+    # Structured grids: use fast index-based computation
+    if grid.is_structured and grid.imap_cv is not None:
+        result = _compute_regions_structured(grid)
+        if result:
+            return result
+        # If structured computation fails (missing data), fall through to topology
     # 1. Face coordinates
     if grid.fc_x is None and grid.vx_x is not None and grid.fc_vx is not None:
         compute_face_coordinates(grid)

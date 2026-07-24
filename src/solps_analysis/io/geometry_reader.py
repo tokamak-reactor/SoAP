@@ -156,6 +156,19 @@ def _load_structured_grid(raw: dict[str, Any]) -> GridTopology:
         version_number=num,
     )
 
+    # Store cut data and mesh spacing for region computation
+    grid._cut_leftcut = leftcut
+    grid._cut_rightcut = rightcut
+    grid._cut_topcut = topcut
+    grid._cut_bottomcut = _ensure_int(raw.get("bottomcut", np.array([0]))).ravel()
+    grid._hx = hx
+    grid._hy = hy
+    # Store neighbor arrays for radial walking
+    grid._leftix = left
+    grid._rightix = right
+    grid._topiy = top
+    grid._bottomiy = bottom
+
     # --- Build imap arrays ---
     imap_cv = np.zeros((nx + 2, ny + 2), dtype=np.int32)
     imap_fcx = np.zeros((nx + 2, ny + 2), dtype=np.int32)
