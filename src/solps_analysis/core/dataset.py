@@ -213,18 +213,18 @@ class SolpsWatch:
         return np.ascontiguousarray(values, dtype=np.float64)
 
     def _structured_to_unstructured(self, data_2d: np.ndarray) -> np.ndarray:
-        """Convert structured 2D to unstructured 1D via imap_cv."""
+        """Convert structured 2D to unstructured 1D via imap_cv — vectorized."""
         if self.grid.imap_cv is None:
             return data_2d.ravel()
 
         ncells = self.grid.n_cells
         result = np.zeros(ncells, dtype=np.float64)
-        imap = self.grid.imap_cv
-        for j in range(data_2d.shape[0]):
-            for i in range(data_2d.shape[1]):
-                idx = imap[i, j]
-                if idx != 0:
-                    result[idx - 1] = data_2d[j, i]
+        imap = self.grid.imap_cv  # (nx+2, ny+2)
+
+        # data_2d is (ny+2, nx+2) after flipud. imap is (nx+2, ny+2).
+        # We need rd_idx[j, i] → imap[i, j], so use .T
+        mask = imap > 0
+        result[imap[mask].astype(np.intp) - 1] = data_2d.T[mask]
         return result
 
     def _infer_location(self, var_name: str) -> str:

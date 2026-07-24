@@ -125,18 +125,20 @@ def _read_eirene_field(
             f.readline()
 
     # ---- read the data ----------------------------------------------------
+    # Read data until next *eirene header — use incremental reading
+    # (the caller has buffered the file, so readline is fast enough)
     data_text: list[str] = []
     tokens_collected = 0
     while tokens_collected < size:
+        pos = f.tell()
         line = f.readline()
-        if not line:  # premature EOF
+        if not line:
             break
         stripped = line.strip()
         if not stripped:
             continue
-        # If we hit another *eirene header stop (unlikely if size is correct,
-        # but be safe)
         if stripped.startswith("*eirene data field"):
+            f.seek(pos)
             break
         tokens = stripped.split()
         data_text.extend(tokens)

@@ -65,36 +65,54 @@ def _raw_to_structured(raw: np.ndarray) -> np.ndarray:
 
 
 def read_watch_file(filepath: str | Path) -> np.ndarray:
-    """Auto-detect and read a single .dat file.
+    """Auto-detect and read a single .dat file — vectorized, no fallback.
 
-    Detection: if 2 columns -> unstructured; if >2 -> structured.
-    Handles files where the header has fewer columns than the data.
+    Detection peeks at the first line:
+    - If first line has 2 space-separated tokens → unstructured (index value)
+    - If first line has 3+ tokens and contains '.' → structured data (row header)
+    - Otherwise → structured format with header line
     """
     filepath = Path(filepath)
-    # First try: read with header skip (handles structured format)
-    try:
-        raw = np.genfromtxt(filepath, skip_header=1, invalid_raise=False)
-        if raw.ndim == 0:
-            raw = np.genfromtxt(filepath, invalid_raise=False)
-    except Exception:
-        raw = np.genfromtxt(filepath, invalid_raise=False)
 
-    if raw.ndim == 0:
+    # Peek at first line to determine format
+    with open(filepath) as f:
+        first_line = f.readline().strip()
+
+    if not first_line:
+        raise ValueError(f"Empty file: {filepath}")
+
+    tokens = first_line.split()
+    n_tokens = len(tokens)
+
+    # Heuristic: if first line has only 2 tokens like "1 1.23e-10", it's unstructured
+    if n_tokens == 2:
+        # Unstructured format: each line is "index  value"
+        data = np.loadtxt(filepath)
+        if data.ndim == 1:
+            return np.array([data[1]]) if len(data) > 1 else data
+        return data[:, 1]
+
+    # Structured format: header line with indices, then data rows
+    # Header has column labels (integers), data has row index + values
+    # Use np.genfromtxt with skip_header=1 for robustness
+    data = np.genfromtxt(filepath, skip_header=1, invalid_raise=False)
+    if data.ndim == 0:
         raise ValueError(f"Cannot parse {filepath}")
 
-    # Remove trailing NaN rows
-    if raw.ndim == 2:
-        mask = ~np.isnan(raw).all(axis=1)
-        if mask.sum() < raw.shape[0]:
-            raw = raw[mask]
+    # Remove trailing NaN rows from genfromtxt
+    if data.ndim == 2:
+        mask = ~np.isnan(data).all(axis=1)
+        if mask.sum() < data.shape[0]:
+            data = data[mask]
 
-    if raw.ndim == 1:
-        return np.array([raw[1]]) if len(raw) > 1 else raw
+    if data.ndim == 1:
+        return np.array([data[1]]) if len(data) > 1 else data
 
-    if raw.shape[1] == 2:
-        return raw[:, 1]
-    else:
-        return _raw_to_structured(raw)
+    if data.shape[1] == 2:
+        # Unstructured detected from data (header was misleading)
+        return data[:, 1]
+
+    return _raw_to_structured(data)
 
 
 def _parse_dat_filename(filename: str) -> tuple[str, int | None] | None:
