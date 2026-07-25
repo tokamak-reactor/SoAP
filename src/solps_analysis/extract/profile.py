@@ -184,3 +184,100 @@ def list_extractors() -> list[str]:
 
 def register_extractor(name: str, **kwargs) -> None:
     EXTRACTOR_REGISTRY[name] = kwargs
+
+
+def find_flux_tube_by_r(watch: SolpsWatch, r_target: float) -> int:
+    """Find the flux tube number closest to a given R coordinate on the OMP.
+
+    Args:
+        watch: Loaded SolpsWatch (regions must be computed).
+        r_target: Target R coordinate on the outer midplane [m].
+
+    Returns:
+        Flux tube number (1-indexed) closest to *r_target*.
+    """
+    _require_regions(watch.grid, ["outer_midplane_cells"])
+    omp = watch.grid.outer_midplane_cells
+    if omp is None or len(omp) == 0:
+        raise ValueError("OMP cells not available — run watch.compute_regions() first.")
+    omp = np.asarray(omp, dtype=np.intp).ravel()
+    omp = omp[omp > 0] - 1  # 1-based → 0-based
+
+    r_omp = watch.grid.cv_r[omp] if watch.grid.cv_r is not None else _cv_r_fallback(watch.grid)
+    i_best = omp[np.argmin(np.abs(r_omp - r_target))]
+
+    ft = watch.grid.cv_ft
+    if ft is None:
+        raise ValueError("Grid attribute 'cv_ft' not available.")
+    return int(ft[i_best])
+
+
+def _cv_r_fallback(grid) -> np.ndarray:
+    r = np.sqrt(grid.cv_x ** 2 + grid.cv_y ** 2)
+    setattr(grid, "cv_r", r)
+    return r
+
+
+def extract_profile_ns(
+    watch: SolpsWatch,
+    variable: str,
+    along: str = "omp",
+    element: str | None = None,
+    include_guards: bool = False,
+) -> list[tuple[np.ndarray, np.ndarray, str]]:
+    """Extract 1D profiles for each charge state of an element.
+
+    Args:
+        watch: Loaded SolpsWatch.
+        variable: Variable name with species dimension (e.g. ``"na"``).
+        along: Extraction path.
+        element: Element symbol (e.g. ``"C"``, ``"D"``). If None, all species.
+        include_guards: Passed through to ``extract_profile``.
+
+    Returns:
+        List of ``(x, y, label)`` tuples, one per charge state.
+    """
+    var = watch.get(variable)
+    if var is None:
+        raise ValueError(f"Variable '{variable}' not found in watch")
+    if var.data.ndim < 2:
+        raise ValueError(f"Variable '{variable}' is not multi-species (ndim={var.data.ndim})")
+
+    ns = var.data.shape[1]
+    comp = watch.b2_comp
+
+    # Determine which columns to plot
+    if element is not None:
+        if comp is None:
+            raise ValueError("B2 composition not available — needed for element lookup.")
+        idx = comp.element_indices(element)
+        if not idx:
+            raise ValueError(f"Element '{element}' not found in composition.")
+        charge_states = [int(comp.zamax[i]) for i in idx]
+        col_range = list(enumerate(idx))
+        names = [f"{element}+{z}" if z > 0 else str(element) for z in charge_states]
+    else:
+        col_range = list(enumerate(range(ns)))
+        if comp is not None:
+            names = []
+            for c in range(ns):
+                z = int(comp.zamax[c])
+                # Find element name
+                elem_name = None
+                for en in comp.element_names:
+                    if c in comp.element_indices(en):
+                        elem_name = en
+                        break
+                names.append(f"{elem_name}+{z}" if elem_name else f"s{c} z={z}")
+        else:
+            names = [f"species {c}" for c in range(ns)]
+
+    results: list[tuple[np.ndarray, np.ndarray, str]] = []
+    for col_idx, spec_idx in col_range:
+        x, y, _, _ = extract_profile(
+            watch, variable, along=along,
+            species=spec_idx, include_guards=include_guards,
+        )
+        results.append((x, y, names[col_idx]))
+
+    return results
