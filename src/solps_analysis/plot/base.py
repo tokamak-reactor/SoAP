@@ -62,6 +62,9 @@ class PlotConfig:
     variable: str | list[str] | None = None
     along: str | None = None
     log: bool = False
+    include_guards: bool = False
+    xlim: tuple[float, float] | None = None
+    ylim: tuple[float, float] | None = None
     title: str | None = None
     style: str = "screen"
     style_overrides: dict = field(default_factory=dict)
@@ -148,6 +151,7 @@ class Plot1D(Plot):
                 x, y, xl, yl = extract_profile(
                     self.watch, var_name,
                     along=self.config.along or "omp",
+                    include_guards=self.config.include_guards,
                 )
                 label = var_name
                 ax.plot(x, y, label=label, linewidth=self._style.get("lines.linewidth", 1.5))
@@ -155,13 +159,23 @@ class Plot1D(Plot):
                 ax.text(0.5, 0.5, f"Error: {e}", transform=ax.transAxes, ha="center")
 
         ax.set_xlabel(xl)
-        ax.set_ylabel(yl)
+
+        # Combine ylabels for multiple variables
+        if len(variables) == 1:
+            ax.set_ylabel(yl)
+        else:
+            ax.set_ylabel("")
 
         if self.config.title:
             ax.set_title(self.config.title)
 
         if self.config.log:
             ax.set_yscale("log")
+
+        if self.config.xlim:
+            ax.set_xlim(self.config.xlim)
+        if self.config.ylim:
+            ax.set_ylim(self.config.ylim)
 
         ax.grid(True, alpha=self._style.get("grid.alpha", 0.3))
 

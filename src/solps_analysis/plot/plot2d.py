@@ -42,15 +42,18 @@ class Plot2D(Plot):
                 f"(expected {grid.n_cells} cells for 2D plot)"
             )
 
-        # --- triangulation from cell centres ---
-        x = grid.cv_x
-        y = grid.cv_y
+        # --- build cell polygons from vertices ---
+        polys = _build_cell_polygons(grid)
+        if polys is None:
+            raise ValueError(
+                "Cannot build cell polygons: vertex data not available. "
+                "Use a structured grid or load vertex connectivity."
+            )
 
-        if x is None or y is None:
-            raise ValueError("Cell centre coordinates not available")
-
-        # Filter guard cells (where data is zero or extreme)
-        valid = np.isfinite(x) & np.isfinite(y) & np.isfinite(data)
+        # --- filter valid cells ---
+        valid_data = np.isfinite(data)
+        if not np.any(valid_data):
+            raise ValueError("All data values are NaN/Inf")
 
         # --- figure / axes ---
         if ax is None:
@@ -60,31 +63,41 @@ class Plot2D(Plot):
         else:
             fig = ax.figure
 
-        # --- triangulation ---
-        tri = Triangulation(x[valid], y[valid])
-
         # --- levels ---
         vmin = self.config.style_overrides.get("vmin")
         vmax = self.config.style_overrides.get("vmax")
         if vmin is None:
-            vmin = np.percentile(data[valid], 2)
+            vmin = np.nanpercentile(data[valid_data], 2)
         if vmax is None:
-            vmax = np.percentile(data[valid], 98)
+            vmax = np.nanpercentile(data[valid_data], 98)
 
-        nlevels = self.config.style_overrides.get("nlevels", 50)
+        cmap_name = self.config.style_overrides.get("cmap", "viridis")
+        cmap = plt.colormaps.get(cmap_name)
 
         if self.config.log:
-            levels = np.logspace(np.log10(max(vmin, 1e-30)), np.log10(vmax), nlevels)
             norm = plt.matplotlib.colors.LogNorm(vmin=max(vmin, 1e-30), vmax=vmax)
         else:
-            levels = np.linspace(vmin, vmax, nlevels)
-            norm = None
+            norm = plt.matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
 
-        cmap = self.config.style_overrides.get("cmap", "viridis")
+        # --- build PatchCollection ---
+        from matplotlib.patches import Polygon as MplPolygon
+        from matplotlib.collections import PatchCollection
 
-        # --- contourf ---
-        cf = ax.tricontourf(tri, data[valid], levels=levels, cmap=cmap, norm=norm,
-                            extend="both")
+        patches = []
+        patch_data = []
+        for icv in range(grid.n_cells):
+            if not valid_data[icv]:
+                continue
+            verts = polys[icv]
+            if verts is None:
+                continue
+            patches.append(MplPolygon(verts, closed=True))
+            patch_data.append(data[icv])
+
+        pc = PatchCollection(patches, array=np.array(patch_data),
+                             cmap=cmap, norm=norm,
+                             edgecolors="none")
+        ax.add_collection(pc)
 
         # --- wall overlay (if available) ---
         self._plot_wall(ax, grid)
