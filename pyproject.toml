@@ -1,7 +1,7 @@
 [project]
 name = "solps-analysis"
 version = "0.1.0"
-description = "SOLPS-ITER data analysis and visualization package"
+description = "SoAP — SOLPS-ITER data analysis and visualization package"
 authors = [
     {name = "SPbPU Plasma Physics Group", email = "kukushkin@spbstu.ru"},
 ]
