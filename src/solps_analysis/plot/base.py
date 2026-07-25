@@ -60,7 +60,7 @@ class PlotConfig:
     """Configuration for a single plot."""
     type: str  # "1d" | "2d" | "wall" | "mesh"
     variable: str | list[str] | None = None
-    along: str | None = None
+    along: str | list[str] | None = None
     log: bool = False
     include_guards: bool = False
     xlim: tuple[float, float] | None = None
@@ -146,17 +146,30 @@ class Plot1D(Plot):
         if isinstance(variables, str):
             variables = [variables]
 
+        alongs = self.config.along
+        if isinstance(alongs, str):
+            alongs = [alongs]
+        elif alongs is None:
+            alongs = ["omp"]
+
+        # Build all (var, along) pairs
+        pairs: list[tuple[str, str]] = []
         for var_name in variables:
+            for a in alongs:
+                pairs.append((var_name, a))
+
+        for var_name, a in pairs:
             try:
                 x, y, xl, yl = extract_profile(
                     self.watch, var_name,
-                    along=self.config.along or "omp",
+                    along=a,
                     include_guards=self.config.include_guards,
                 )
-                label = var_name
+                label = f"{var_name} ({a})" if len(pairs) > 1 else var_name
                 ax.plot(x, y, label=label, linewidth=self._style.get("lines.linewidth", 1.5))
             except Exception as e:
-                ax.text(0.5, 0.5, f"Error: {e}", transform=ax.transAxes, ha="center")
+                ax.text(0.5, 0.5, f"Error ({var_name}, {a}): {e}",
+                        transform=ax.transAxes, ha="center")
 
         ax.set_xlabel(xl)
 
