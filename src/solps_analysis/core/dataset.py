@@ -352,6 +352,28 @@ class SolpsWatch:
                 pass
         return computed
 
+    def compute_regions(self) -> list[str]:
+        """Compute all region data (targets, midplanes, separatrix)."""
+        from solps_analysis.core.regions import compute_all_regions
+        from solps_analysis.core.regions_structured import compute_regions_structured
+
+        if self.grid.is_structured:
+            result = compute_regions_structured(self.grid)
+        else:
+            result = compute_all_regions(self.grid)
+
+        if result:
+            for key, val in result.items():
+                setattr(self.grid, key, val)
+            return list(result.keys())
+        return []
+
+    def plot(self, variable: str, type: str = "1d", **kwargs) -> "PlotResult":
+        """Quick ad-hoc plot. Shortcut for Plot1D (or Plot2D in future)."""
+        from solps_analysis.plot import Plot1D, PlotConfig
+        config = PlotConfig(type=type, variable=variable, **kwargs)
+        return Plot1D(self, config).render()
+
     def __getitem__(self, name: str) -> SolpsVariable:
         var = self.get(name)
         if var is None:

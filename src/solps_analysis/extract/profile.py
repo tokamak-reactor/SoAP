@@ -30,21 +30,14 @@ from solps_analysis.core.dataset import SolpsWatch
 EXTRACTOR_REGISTRY: dict[str, dict[str, Any]] = {}
 
 
-def _ensure_regions(grid: GridTopology) -> None:
-    """Compute regions on the grid if not already done."""
-    if grid.outer_midplane_cells is not None:
-        return
-
-    if grid.is_structured:
-        from solps_analysis.core.regions_structured import compute_regions_structured
-        result = compute_regions_structured(grid)
-    else:
-        from solps_analysis.core.regions import compute_all_regions
-        result = compute_all_regions(grid)
-
-    if result:
-        for key, val in result.items():
-            setattr(grid, key, val)
+def _require_regions(grid: GridTopology, needed: list[str]) -> None:
+    """Check that required grid attributes are set. Raise clear error if not."""
+    missing = [a for a in needed if getattr(grid, a, None) is None]
+    if missing:
+        raise ValueError(
+            f"Region data not computed. Missing grid attributes: {missing}\n"
+            f"Run watch.compute_regions() first."
+        )
 
 
 def extract_profile(
@@ -67,7 +60,19 @@ def extract_profile(
     Returns:
         Tuple ``(x, y, xlabel, ylabel)``.
     """
-    _ensure_regions(watch.grid)
+    # ── registry lookup ───────────────────────────────────────────
+    if along not in EXTRACTOR_REGISTRY:
+        known = ", ".join(sorted(EXTRACTOR_REGISTRY.keys()))
+        raise ValueError(f"Unknown extraction path '{along}'. Known: {known}")
+
+    entry = EXTRACTOR_REGISTRY[along]
+
+    # Check regions: only check INDICES (not coordinate, which has fallback)
+    needed = [entry["indices_attr"]]
+    if include_guards and entry.get("guard_indices_attr"):
+        needed = [entry["guard_indices_attr"]]
+    _require_regions(watch.grid, needed)
+    grid = watch.grid
 
     # ── resolve variable data ─────────────────────────────────────
     var = watch.get(variable)
@@ -85,19 +90,12 @@ def extract_profile(
         else:
             data = data[:, 0]
 
-    # ── flux tube ─────────────────────────────────────────────────
+    # ── flux tube (special case) ──────────────────────────────────
     if along.startswith("ft:"):
         ft_num = int(along.split(":")[1])
-        return _extract_along_ft(watch.grid, data, ft_num, ylabel)
+        return _extract_along_ft(grid, data, ft_num, ylabel)
 
-    # ── registry lookup ───────────────────────────────────────────
-    if along not in EXTRACTOR_REGISTRY:
-        known = ", ".join(sorted(EXTRACTOR_REGISTRY.keys()))
-        raise ValueError(f"Unknown extraction path '{along}'. Known: {known}")
-
-    entry = EXTRACTOR_REGISTRY[along]
-    grid = watch.grid
-
+    # ── coordinate ────────────────────────────────────────────────
     coord = getattr(grid, entry["coord_attr"], None)
     if coord is None:
         # Fallback: compute cv_r from cv_x, cv_y
