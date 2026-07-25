@@ -149,21 +149,50 @@ class Plot2D(Plot):
 
 
 def _build_cell_vertices(grid) -> list[np.ndarray] | None:
-    """Compute cell vertex coordinates for PatchCollection.
+    """Build cell vertex coordinates from corner data.
 
-    For structured grids: reconstruct from imap + cell centers.
-    For unstructured grids: return None (not yet supported).
+    For structured grids: uses ``cv_crn_r`` / ``cv_crn_z`` (4 corners
+    per cell, stored by geometry_reader). Much faster than averaging.
+    For unstructured grids: returns None (load cv_vx/cv_vx_p first).
     """
-    if not grid.is_structured:
+    crn_r = getattr(grid, "cv_crn_r", None)
+    crn_z = getattr(grid, "cv_crn_z", None)
+
+    if crn_r is None or crn_z is None:
+        # Unstructured or old geometry — try fallback
+        return _build_cell_vertices_fallback(grid)
+
+    imap = grid.imap_cv
+    if imap is None:
         return None
 
-    if grid.imap_cv is None or grid.cv_x is None:
+    nx, ny = imap.shape
+    polys: list[np.ndarray | None] = [None] * grid.n_cells
+
+    for ix in range(nx):
+        for iy in range(ny):
+            c = int(imap[ix, iy])
+            if c <= 0 or c > grid.n_cells:
+                continue
+            icv = c - 1
+            # 4 corners: (R0,Z0), (R1,Z1), (R2,Z2), (R3,Z3)
+            rr = crn_r[ix, iy, :]  # (4,)
+            zz = crn_z[ix, iy, :]
+            polys[icv] = np.column_stack([rr, zz])
+
+    return polys
+
+
+def _build_cell_vertices_fallback(grid) -> list[np.ndarray] | None:
+    """Fallback: estimate vertices by averaging cell centres (less accurate)."""
+    if not grid.is_structured or grid.imap_cv is None or grid.cv_x is None:
         return None
 
-    nx, ny = grid.nx + 2, grid.ny + 2  # full grid with guards
-    imap = grid.imap_cv  # (nx, ny)
+    nx, ny = grid.nx + 2, grid.ny + 2
+    imap = grid.imap_cv
+    cv_x = np.asarray(grid.cv_x, dtype=np.float64)
+    cv_y = np.asarray(grid.cv_y, dtype=np.float64)
 
-    # Build a reverse lookup: cell_index → (ix, iy)
     cell_to_ij: dict[int, tuple[int, int]] = {}
     for ix in range(nx):
         for iy in range(ny):
@@ -171,45 +200,15 @@ def _build_cell_vertices(grid) -> list[np.ndarray] | None:
             if c > 0:
                 cell_to_ij[c - 1] = (ix, iy)
 
-    # Build vertex coordinates by averaging cell centers of 4 neighbours
-    # Vertex (ix, iy) is at corner between cells (ix-1,..), (ix,..), etc.
-    # For each real cell, its 4 vertices are at:
-    #   (ix, iy), (ix+1, iy), (ix+1, iy+1), (ix, iy+1) in imap-space
-    # But we need (R, Z) coordinates for each vertex.
-
-    # Approach: for each cell, get its 4 face centers from cv_fc
-    # Each face center approximates the midpoint of an edge.
-    # The 4 corners are reconstructed from adjacent face centers.
-
-    # Simpler: compute vertices as weighted average of surrounding cell centers.
-    # For each cell at imap position (ix, iy), its 4 vertices are at
-    # half-integer positions.
-
-    # Actually the simplest correct approach for a structured grid:
-    # Each vertex (ix, iy) in the imap-space is shared by up to 4 cells.
-    # The vertex coordinate is the average of the cell centers of those cells.
-
-    cv_x = np.asarray(grid.cv_x, dtype=np.float64)
-    cv_y = np.asarray(grid.cv_y, dtype=np.float64)
-
-    # For each cell, compute its vertices as 4 face-face intersections
-    # Cell at (ix, iy) has vertices at corners of imap cells:
-    #   v0 = (ix, iy), v1 = (ix+1, iy), v2 = (ix+1, iy+1), v3 = (ix, iy+1)
-
     polys: list[np.ndarray | None] = [None] * grid.n_cells
-
     for icv in range(grid.n_cells):
         if icv not in cell_to_ij:
             continue
         ix, iy = cell_to_ij[icv]
-        # Get the 4 cells that share each corner vertex
-        verts_ij = [
-            (ix, iy), (ix + 1, iy), (ix + 1, iy + 1), (ix, iy + 1),
-        ]
+        verts_ij = [(ix, iy), (ix + 1, iy), (ix + 1, iy + 1), (ix, iy + 1)]
         verts_r = np.zeros(4)
         verts_z = np.zeros(4)
         for k, (vix, viy) in enumerate(verts_ij):
-            # Average the centers of surrounding cells
             cells_around = []
             for di in [0, -1]:
                 for dj in [0, -1]:
@@ -221,11 +220,8 @@ def _build_cell_vertices(grid) -> list[np.ndarray] | None:
             if cells_around:
                 verts_r[k] = np.mean(cv_x[cells_around])
                 verts_z[k] = np.mean(cv_y[cells_around])
-
-        # Check for degenerate (all zeros or repeated vertices)
-        if np.all(verts_r == 0) or np.all(verts_z == 0):
-            continue
-        polys[icv] = np.column_stack([verts_r, verts_z])
+        if np.any(verts_r != 0):
+            polys[icv] = np.column_stack([verts_r, verts_z])
 
     return polys
 

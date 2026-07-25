@@ -273,6 +273,9 @@ def _load_structured_grid(raw: dict[str, Any]) -> GridTopology:
     grid.cv_y = cv_y
     grid.cv_vol = cv_vol_arr
     grid.cv_hz = cv_hz_arr
+    # Store cell corner coordinates for 2D plotting
+    grid.cv_crn_r = crx  # (nx+2, ny+2, 4)
+    grid.cv_crn_z = cry
 
     # --- Regions ---
     cv_reg = np.zeros(nCv, dtype=np.int32)
