@@ -357,7 +357,10 @@ class SolpsWatch:
         from solps_analysis.core.regions import compute_all_regions
         from solps_analysis.core.regions_structured import compute_regions_structured
 
-        if self.grid.is_structured:
+        imap = getattr(self.grid, "imap_cv", None)
+        is_struct = self.grid.is_structured and (imap is None or imap.ndim == 2)
+
+        if is_struct:
             result = compute_regions_structured(self.grid)
         else:
             result = compute_all_regions(self.grid)

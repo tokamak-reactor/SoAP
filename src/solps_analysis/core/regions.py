@@ -735,7 +735,8 @@ def _compute_orientation(grid: GridTopology) -> None:
 def compute_all_regions(grid: GridTopology) -> dict[str, Any]:
     """Run all region computations in order. Returns regions dict."""
     # Structured grids: use fast index-based computation
-    if grid.is_structured and grid.imap_cv is not None:
+    is_struct = grid.is_structured and grid.imap_cv is not None and grid.imap_cv.ndim == 2
+    if is_struct:
         result = _compute_regions_structured(grid)
         if result:
             return result

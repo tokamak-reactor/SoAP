@@ -149,38 +149,61 @@ class Plot2D(Plot):
 
 
 def _build_cell_vertices(grid) -> list[np.ndarray] | None:
-    """Build cell vertex coordinates from corner data.
+    """Build cell vertex coordinates for PatchCollection.
 
-    For structured grids: uses ``cv_crn_r`` / ``cv_crn_z`` (4 corners
-    per cell, stored by geometry_reader). Much faster than averaging.
-    For unstructured grids: returns None (load cv_vx/cv_vx_p first).
+    Three paths:
+    1. ``cv_crn_r`` / ``cv_crn_z`` — structured grid, exact corners
+       from b2fgmtry (crx/cry).
+    2. ``cv_vx_p`` / ``cv_vx`` / ``vx_x`` / ``vx_y`` — unstructured
+       grid, exact cell→vertex mapping.
+    3. Fallback — averaging cell centers (less accurate).
     """
     crn_r = getattr(grid, "cv_crn_r", None)
     crn_z = getattr(grid, "cv_crn_z", None)
 
-    if crn_r is None or crn_z is None:
-        # Unstructured or old geometry — try fallback
-        return _build_cell_vertices_fallback(grid)
+    # Path 1: structured with exact corners
+    if crn_r is not None and crn_z is not None and grid.imap_cv is not None:
+        imap = grid.imap_cv
+        if imap.ndim == 2:  # structured: (nx+2, ny+2)
+            nx, ny = imap.shape
+            polys: list = [None] * grid.n_cells
+            for ix in range(nx):
+                for iy in range(ny):
+                    c = int(imap[ix, iy])
+                    if c <= 0 or c > grid.n_cells:
+                        continue
+                    polys[c - 1] = np.column_stack([
+                        crn_r[ix, iy, :], crn_z[ix, iy, :]
+                    ])
+            return polys
 
-    imap = grid.imap_cv
-    if imap is None:
-        return None
-
-    nx, ny = imap.shape
-    polys: list[np.ndarray | None] = [None] * grid.n_cells
-
-    for ix in range(nx):
-        for iy in range(ny):
-            c = int(imap[ix, iy])
-            if c <= 0 or c > grid.n_cells:
+    # Path 2: unstructured with cell→vertex mapping
+    cv_vx_p = getattr(grid, "cv_vx_p", None)
+    cv_vx = getattr(grid, "cv_vx", None)
+    vx_x = getattr(grid, "vx_x", None)
+    vx_y = getattr(grid, "vx_y", None)
+    if cv_vx_p is not None and cv_vx is not None and vx_x is not None:
+        n_cells = grid.n_cells
+        polys = [None] * n_cells
+        for icv in range(n_cells):
+            start = int(cv_vx_p[icv, 0])
+            count = int(cv_vx_p[icv, 1])
+            if count < 3:
                 continue
-            icv = c - 1
-            # 4 corners: (R0,Z0), (R1,Z1), (R2,Z2), (R3,Z3)
-            rr = crn_r[ix, iy, :]  # (4,)
-            zz = crn_z[ix, iy, :]
-            polys[icv] = np.column_stack([rr, zz])
+            verts_idx = cv_vx[start:start + count].astype(np.intp)
+            # Filter invalid vertices
+            valid = (verts_idx > 0) & (verts_idx <= len(vx_x))
+            if not np.any(valid):
+                continue
+            verts_idx = verts_idx[valid] - 1  # 1-based → 0-based
+            polys[icv] = np.column_stack([
+                np.asarray(vx_x, dtype=np.float64)[verts_idx],
+                np.asarray(vx_y, dtype=np.float64)[verts_idx],
+            ])
+        return polys
 
-    return polys
+    # Path 3: fallback
+    return _build_cell_vertices_fallback(grid)
 
 
 def _build_cell_vertices_fallback(grid) -> list[np.ndarray] | None:
