@@ -43,11 +43,11 @@ class Plot2D(Plot):
             )
 
         # --- build cell polygons from vertices ---
-        polys = _build_cell_polygons(grid)
+        polys = _build_cell_vertices(grid)
         if polys is None:
             raise ValueError(
-                "Cannot build cell polygons: vertex data not available. "
-                "Use a structured grid or load vertex connectivity."
+                "Cannot build 2D plot: vertex data not available. "
+                "Run watch.compute_regions() first."
             )
 
         # --- filter valid cells ---
@@ -117,7 +117,7 @@ class Plot2D(Plot):
             )
 
         # --- colorbar ---
-        cbar = fig.colorbar(cf, ax=ax)
+        cbar = fig.colorbar(pc, ax=ax)
         cbar.set_label(var_name)
 
         fig.tight_layout()
@@ -146,3 +146,86 @@ class Plot2D(Plot):
             idx = idx[valid] - 1
             if len(idx) > 0:
                 ax.plot(grid.fc_x[idx], grid.fc_y[idx], "w--", linewidth=1.5, alpha=0.7)
+
+
+def _build_cell_vertices(grid) -> list[np.ndarray] | None:
+    """Compute cell vertex coordinates for PatchCollection.
+
+    For structured grids: reconstruct from imap + cell centers.
+    For unstructured grids: return None (not yet supported).
+    """
+    if not grid.is_structured:
+        return None
+
+    if grid.imap_cv is None or grid.cv_x is None:
+        return None
+
+    nx, ny = grid.nx + 2, grid.ny + 2  # full grid with guards
+    imap = grid.imap_cv  # (nx, ny)
+
+    # Build a reverse lookup: cell_index → (ix, iy)
+    cell_to_ij: dict[int, tuple[int, int]] = {}
+    for ix in range(nx):
+        for iy in range(ny):
+            c = int(imap[ix, iy])
+            if c > 0:
+                cell_to_ij[c - 1] = (ix, iy)
+
+    # Build vertex coordinates by averaging cell centers of 4 neighbours
+    # Vertex (ix, iy) is at corner between cells (ix-1,..), (ix,..), etc.
+    # For each real cell, its 4 vertices are at:
+    #   (ix, iy), (ix+1, iy), (ix+1, iy+1), (ix, iy+1) in imap-space
+    # But we need (R, Z) coordinates for each vertex.
+
+    # Approach: for each cell, get its 4 face centers from cv_fc
+    # Each face center approximates the midpoint of an edge.
+    # The 4 corners are reconstructed from adjacent face centers.
+
+    # Simpler: compute vertices as weighted average of surrounding cell centers.
+    # For each cell at imap position (ix, iy), its 4 vertices are at
+    # half-integer positions.
+
+    # Actually the simplest correct approach for a structured grid:
+    # Each vertex (ix, iy) in the imap-space is shared by up to 4 cells.
+    # The vertex coordinate is the average of the cell centers of those cells.
+
+    cv_x = np.asarray(grid.cv_x, dtype=np.float64)
+    cv_y = np.asarray(grid.cv_y, dtype=np.float64)
+
+    # For each cell, compute its vertices as 4 face-face intersections
+    # Cell at (ix, iy) has vertices at corners of imap cells:
+    #   v0 = (ix, iy), v1 = (ix+1, iy), v2 = (ix+1, iy+1), v3 = (ix, iy+1)
+
+    polys: list[np.ndarray | None] = [None] * grid.n_cells
+
+    for icv in range(grid.n_cells):
+        if icv not in cell_to_ij:
+            continue
+        ix, iy = cell_to_ij[icv]
+        # Get the 4 cells that share each corner vertex
+        verts_ij = [
+            (ix, iy), (ix + 1, iy), (ix + 1, iy + 1), (ix, iy + 1),
+        ]
+        verts_r = np.zeros(4)
+        verts_z = np.zeros(4)
+        for k, (vix, viy) in enumerate(verts_ij):
+            # Average the centers of surrounding cells
+            cells_around = []
+            for di in [0, -1]:
+                for dj in [0, -1]:
+                    ci, cj = vix + di, viy + dj
+                    if 0 <= ci < nx and 0 <= cj < ny:
+                        c = int(imap[ci, cj])
+                        if c > 0 and c - 1 < grid.n_cells:
+                            cells_around.append(c - 1)
+            if cells_around:
+                verts_r[k] = np.mean(cv_x[cells_around])
+                verts_z[k] = np.mean(cv_y[cells_around])
+
+        # Check for degenerate (all zeros or repeated vertices)
+        if np.all(verts_r == 0) or np.all(verts_z == 0):
+            continue
+        polys[icv] = np.column_stack([verts_r, verts_z])
+
+    return polys
+
