@@ -584,6 +584,16 @@ def read_fort46(path: str | Path) -> dict[str, np.ndarray]:
         result["vzdenm"] = _read_eirene_field(f, "vzdenm", (ntri, nmol)) * 10.0
         result["vzdeni"] = _read_eirene_field(f, "vzdeni", (ntri, nion)) * 10.0
 
+        # Projection vectors (triangle → B2 cell mapping)
+        # pux/puy/pvx/pvy — projection vectors with size depending on version.
+        # For structured (v < 3.002): size = ntri (triangle grid)
+        # For unstructured (v >= 3.002): size = nCv (B2 grid)
+        # Reshape as 1-D vectors; the actual dimensions are handled at use-site.
+        result["pux"] = _read_eirene_field(f, "pux", (1,))
+        result["puy"] = _read_eirene_field(f, "puy", (1,))
+        result["pvx"] = _read_eirene_field(f, "pvx", (1,))
+        result["pvy"] = _read_eirene_field(f, "pvy", (1,))
+
     return result
 
 
