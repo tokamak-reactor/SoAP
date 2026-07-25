@@ -97,10 +97,24 @@ class Plot:
         self._style.update(config.style_overrides)
 
     def _apply_style(self) -> None:
-        """Apply preset style to matplotlib rcParams."""
+        """Apply preset style to matplotlib rcParams.
+        
+        Only applies valid rcParams keys — plot-specific keys like
+        ``cmap``, ``vmin``, ``vmax`` are handled by the individual
+        ``render()`` methods.
+        """
+        valid_rc = {
+            "figure.figsize", "figure.dpi", "font.family", "font.size",
+            "axes.labelsize", "xtick.labelsize", "ytick.labelsize",
+            "legend.fontsize", "lines.linewidth", "grid.alpha",
+            "savefig.bbox", "savefig.pad_inches",
+        }
         for key, val in self._style.items():
-            if not key.startswith("savefig") and not key.startswith("contour"):
-                plt.rcParams[key] = val
+            if key in valid_rc:
+                try:
+                    plt.rcParams[key] = val
+                except KeyError:
+                    pass
 
     def render(self, ax: Axes | None = None) -> PlotResult:
         """Render the plot. Override in subclasses."""
