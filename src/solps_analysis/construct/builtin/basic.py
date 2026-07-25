@@ -10,7 +10,7 @@ from solps_analysis.construct.registry import quantity
 # Physical constants (SI)
 # ──────────────────────────────────────────────
 
-QE = 1.602176487e-19   # Elementary charge [C]
+QE = 1.602176634e-19   # Elementary charge [C] (CODATA 2018, exact by SI definition)
 MP = 1.672621637e-27   # Proton mass [kg]
 ME = 9.10938215e-31    # Electron mass [kg]
 EPS0 = 8.8542e-12      # Vacuum permittivity [F/m]

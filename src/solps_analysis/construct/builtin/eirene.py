@@ -23,7 +23,7 @@ from solps_analysis.construct.registry import quantity
 # ──────────────────────────────────────────────
 # Constants
 # ──────────────────────────────────────────────
-QE = 1.602176487e-19   # Elementary charge [C]
+QE = 1.602176634e-19   # Elementary charge [C] (CODATA 2018, exact)
 MP = 1.672621637e-27   # Proton mass [kg]
 
 
