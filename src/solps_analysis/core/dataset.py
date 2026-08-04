@@ -55,6 +55,8 @@ class SolpsWatch:
 
     _variables: dict[str, SolpsVariable] = field(default_factory=dict)
     _file_index: dict[str, str] = field(default_factory=dict)
+    _construct_cache: dict[str, SolpsVariable] = field(default_factory=dict)
+    _workspace_cache: dict | None = None
 
     # EIRENE data
     neut: dict | None = None
@@ -338,10 +340,19 @@ class SolpsWatch:
 
     def construct(self, name: str) -> SolpsVariable | None:
         """Compute a derived physical quantity by name.
-        
+
         Uses the quantity registry (@quantity decorator).
         Automatically loads composition data if needed.
+
+        Results are memoized on the watch (quantities are pure functions
+        of immutable watch data), so repeated calls are ~0.02 ms.
+        Clear the cache with ``watch._construct_cache.clear()`` if you
+        register new quantities at runtime and want them fresh.
         """
+        cached = self._construct_cache.get(name)
+        if cached is not None:
+            return cached
+
         from solps_analysis.construct.builtin import basic  # noqa: F401
         from solps_analysis.construct.registry import construct_quantity
         from solps_analysis.construct.composition import (
@@ -385,6 +396,7 @@ class SolpsWatch:
         )
         if var is not None:
             self._variables[name] = var
+            self._construct_cache[name] = var
         return var
 
     def _assemble_na(self) -> None:
