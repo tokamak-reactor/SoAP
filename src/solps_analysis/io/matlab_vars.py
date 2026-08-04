@@ -383,10 +383,17 @@ def build_workspace(watch) -> dict:
     for name, (bases, sign) in _CELL_SCALAR_VARS.items():
         ws[name] = get_scalar_var(watch, bases, sign=sign)
 
+    # MATLAB read_geometry.m line 822: fcHz = intface(cvHz, 1, 'hc')
+    from solps_analysis.core.operators import intface as _intface_op
+    if watch.grid.cv_hz is not None and watch.grid.fc_cv is not None:
+        ws["fc_hz"] = _intface_op(watch.grid, watch.grid.cv_hz, 1, "hc")
+    else:
+        ws["fc_hz"] = np.ones(watch.grid.n_faces)
+
     # MATLAB read_data_3x.m lines 873-876:
     # fna_mo_vis_th = flubvx ./ fcHz ./ ams ./ mp
     if "fna_mo_vis_th" in ws and ns > 0:
-        fc_hz = getattr(watch.grid, "fc_hz", None)
+        fc_hz = ws.get("fc_hz")
         ams = species_am(watch)
         if fc_hz is not None and ams.size == ns:
             denom = fc_hz[:, None] * ams[None, :] * MP

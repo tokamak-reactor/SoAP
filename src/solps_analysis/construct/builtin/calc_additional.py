@@ -746,11 +746,11 @@ def calc_div_fmo_viscurv(watch=None, grid=None, comp=None, **kw):
         return np.zeros(grid.n_cells)
     ams = _species_mass_kg(comp)
     uaf = intface(grid, ws["ua"], 1, _intface_method(grid))
-    fc_hz = ws.get("hzf")
+    fc_hz = ws.get("fc_hz")
     if fc_hz is None:
-        fc_hz = intface(grid, grid.cv_hz, 1, _intface_method(grid)) if grid.cv_hz is not None else np.ones(grid.n_faces)
-    fth = ws["fna_mo_vis_th"] * fc_hz[:, None] * ams[None, :] * MP * uaf
-    fr = ws["fna_mo_vis_r"] * fc_hz[:, None] * ams[None, :] * MP * uaf
+        fc_hz = np.ones(grid.n_faces)
+    fth = ws["fna_mo_vis_th"] * fc_hz[:, None] * ams[None, :] * uaf
+    fr = ws["fna_mo_vis_r"] * fc_hz[:, None] * ams[None, :] * uaf
     return _div_pair(grid, fth, fr)
 
 
@@ -766,11 +766,11 @@ def calc_div_fmo_vis_BgradB(watch=None, grid=None, comp=None, **kw):
         return np.zeros(grid.n_cells)
     ams = _species_mass_kg(comp)
     uaf = intface(grid, ws["ua"], 1, _intface_method(grid))
-    fc_hz = ws.get("hzf")
+    fc_hz = ws.get("fc_hz")
     if fc_hz is None:
-        fc_hz = intface(grid, grid.cv_hz, 1, _intface_method(grid)) if grid.cv_hz is not None else np.ones(grid.n_faces)
-    fth = ws["fna_nuBgradB_th"] * fc_hz[:, None] * ams[None, :] * MP * uaf
-    fr = ws["fna_nuBgradB_r"] * fc_hz[:, None] * ams[None, :] * MP * uaf
+        fc_hz = np.ones(grid.n_faces)
+    fth = ws["fna_nuBgradB_th"] * fc_hz[:, None] * ams[None, :] * uaf
+    fr = ws["fna_nuBgradB_r"] * fc_hz[:, None] * ams[None, :] * uaf
     return _div_pair(grid, fth, fr)
 
 
