@@ -25,6 +25,7 @@ class QuantityDef:
         description: str = "",
         unit: str = "",
         location: str = "cell",
+        extra: dict | None = None,
     ):
         self.name = name
         self.func = func
@@ -32,6 +33,7 @@ class QuantityDef:
         self.description = description
         self.unit = unit
         self.location = location
+        self.extra = extra or {}
 
     def __repr__(self) -> str:
         return (
@@ -47,6 +49,7 @@ def quantity(
     description: str = "",
     unit: str = "",
     location: str = "cell",
+    **extra: Any,
 ) -> Callable:
     """Декоратор для регистрации новой расчётной величины.
 
@@ -57,9 +60,14 @@ def quantity(
             requires=["te_eV", "ti_eV"],
             description="Speed of sound",
             unit="m/s",
+            matlab_lines="calc_additional.m:1139",   # → extra["matlab_lines"]
         )
         def calc_cs(te, ti, grid=None, comp=None, watch=None):
             return np.sqrt((te + ti) * const.e / (const.m_D * const.m_p))
+
+    Любые дополнительные keyword-аргументы (кроме зарезервированных)
+    попадают в ``extra`` метаданных переменной — удобно для хранения
+    ссылок на MATLAB-строки, формул, источников и т.п.
     """
 
     def decorator(func: Callable) -> Callable:
@@ -71,6 +79,7 @@ def quantity(
             description=description or func.__doc__ or "",
             unit=unit,
             location=location,
+            extra=extra,
         )
         _QUANTITY_REGISTRY[qname] = qdef
         return func
@@ -169,5 +178,6 @@ def construct_quantity(
         description=qdef.description,
         location=qdef.location,
         is_constructed=True,
+        extra=dict(qdef.extra),
     )
     return SolpsVariable(data=np.asarray(data, dtype=np.float64), meta=meta)

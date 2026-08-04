@@ -10,7 +10,13 @@ import numpy as np
 
 @dataclass(frozen=True)
 class VariableMeta:
-    """Metadata for a single SOLPS variable."""
+    """Metadata for a single SOLPS variable.
+
+    Frozen: metadata is written once at creation. The ``extra`` dict is
+    the single extension point for arbitrary additional information
+    (source, formula, MATLAB reference lines, uncertainty, plot hints,
+    …); its *contents* are mutable even though the container is frozen.
+    """
 
     name: str
     unit: str = ""
@@ -18,11 +24,18 @@ class VariableMeta:
     location: str = "cell"
     source_file: str = ""
     is_constructed: bool = False
+    extra: dict = field(default_factory=dict)
 
 
-@dataclass
+@dataclass(frozen=True)
 class SolpsVariable:
-    """A single variable with data and metadata."""
+    """A single variable with data and metadata.
+
+    Frozen: variables are created once when the watch is read (or a
+    quantity is constructed) and must not be mutated afterwards. To
+    attach extra information use ``meta.extra`` (mutable dict), never
+    dynamic attributes — they are forbidden on frozen instances.
+    """
 
     data: np.ndarray
     meta: VariableMeta
