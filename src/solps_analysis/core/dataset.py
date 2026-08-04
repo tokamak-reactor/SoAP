@@ -57,6 +57,7 @@ class SolpsWatch:
     _file_index: dict[str, str] = field(default_factory=dict)
     _construct_cache: dict[str, SolpsVariable] = field(default_factory=dict)
     _workspace_cache: dict | None = None
+    _dat_cache: dict[str, np.ndarray] = field(default_factory=dict)
 
     # EIRENE data
     neut: dict | None = None
@@ -221,7 +222,14 @@ class SolpsWatch:
         """Read a .dat file and convert to 1D if structured grid.
 
         Uses the variable catalog to decide cell vs face transformation.
+        Results are cached on the watch (``_dat_cache``): files are read
+        from disk at most once — workspace assembly and quantity
+        construction reuse the in-memory arrays.
         """
+        cached = self._dat_cache.get(file_path)
+        if cached is not None:
+            return cached
+
         values = read_watch_file(file_path)
 
         # Convert 2D → 1D for structured grids
@@ -246,7 +254,9 @@ class SolpsWatch:
                 else:
                     values = self._structured_to_unstructured(values.T)
 
-        return np.ascontiguousarray(values, dtype=np.float64)
+        values = np.ascontiguousarray(values, dtype=np.float64)
+        self._dat_cache[file_path] = values
+        return values
 
     def _structured_to_faces(self, data_2d: np.ndarray, dim: int = 1) -> np.ndarray:
         """Convert structured 2D (ny+2, nx+2) to 1D face data.
