@@ -22,7 +22,7 @@ def _ws(watch) -> dict:
 
 def _intface_method(grid) -> str:
     """MATLAB line 349-353: version >= 3.002 → 'vol', else 'halfsum'."""
-    return "vol" if grid.version_number >= 3002 else "halfsum"
+    return "vol" if grid.version_float >= 3.002 else "halfsum"
 
 
 # ──────────────────────────────────────────────────────────────
@@ -504,3 +504,393 @@ def calc_div_fhe_mdf_th(watch=None, grid=None, **kw):
 def calc_div_fhe_mdf_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
     return _div_r(grid, ws["fhe_mdf_r"])
+
+
+# ──────────────────────────────────────────────────────────────
+# Currents & effective velocities (lines 406-476)
+# ──────────────────────────────────────────────────────────────
+
+@quantity(
+    name="fna_curr_th",
+    requires=[],
+    description="current-related particle flux, poloidal",
+    unit="m⁻² s⁻¹",
+    location="face",
+)
+def calc_fna_curr_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    if grid.version_float >= 3.2:
+        # version >= 320: from fch components / qe
+        fch = (ws.get("fch_inert_th", np.zeros(grid.n_faces))
+               + ws.get("fch_vispar_th", np.zeros(grid.n_faces))
+               + ws.get("fch_visper_th", np.zeros(grid.n_faces))
+               + ws.get("fch_AN_th", np.zeros(grid.n_faces))
+               + ws.get("fch_visq_th", np.zeros(grid.n_faces)))
+        ns = ws["fna_mdf_th"].shape[1]
+        out = np.zeros((grid.n_faces, ns))
+        if fch.ndim == 1:
+            out[:, 1] = fch / QE  # main ion column
+        else:
+            out = fch / QE
+    else:
+        out = (ws["fna_mdf_th"] - (ws["fna_nupar_th"] + ws["fna_dia_mdf_th"]
+               + ws["fna_RhieChow_th"] + ws["fna_nuAN_th"] + ws["fna_Dgradn_th"]
+               + ws["fna_nuExB_th"]))
+    return _zero_neutral_cols(out, comp)
+
+
+@quantity(
+    name="fna_curr_r",
+    requires=[],
+    description="current-related particle flux, radial",
+    unit="m⁻² s⁻¹",
+    location="face",
+)
+def calc_fna_curr_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    if grid.version_float >= 3.2:
+        fch = (ws.get("fch_inert_r", np.zeros(grid.n_faces))
+               + ws.get("fch_vispar_r", np.zeros(grid.n_faces))
+               + ws.get("fch_visper_r", np.zeros(grid.n_faces))
+               + ws.get("fch_AN_r", np.zeros(grid.n_faces))
+               + ws.get("fch_visq_r", np.zeros(grid.n_faces)))
+        ns = ws["fna_mdf_r"].shape[1]
+        out = np.zeros((grid.n_faces, ns))
+        if fch.ndim == 1:
+            out[:, 1] = fch / QE
+        else:
+            out = fch / QE
+    else:
+        out = (ws["fna_mdf_r"] - (ws["fna_dia_mdf_r"] + ws["fna_RhieChow_r"]
+               + ws["fna_nuAN_r"] + ws["fna_Dgradn_r"] + ws["fna_nuExB_r"]))
+    return _zero_neutral_cols(out, comp)
+
+
+def _zs(comp):
+    """Charge zs per species (0 for neutrals, zamax for ions)."""
+    if comp is None:
+        return None
+    zs = getattr(comp, "zs", None)
+    if zs is None:
+        zamax = getattr(comp, "zamax", None)
+        if zamax is not None:
+            zs = np.asarray(zamax)
+    return zs
+
+
+def _zero_neutral_cols(out, comp):
+    """Zero columns of charged-species matrix for neutral species."""
+    zs = _zs(comp)
+    if zs is None or out.ndim != 2:
+        return out
+    out[:, np.asarray(zs) == 0] = 0
+    return out
+
+
+@quantity(
+    name="div_fna_curr",
+    requires=[],
+    description="div of current particle flux",
+    unit="m⁻³ s⁻¹",
+)
+def calc_div_fna_curr(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    fth = ws.get("fna_curr_th")
+    fr = ws.get("fna_curr_r")
+    if fth is None:
+        fth = calc_fna_curr_th(watch=watch, grid=grid, comp=comp)
+    if fr is None:
+        fr = calc_fna_curr_r(watch=watch, grid=grid, comp=comp)
+    return _div_pair(grid, fth, fr)
+
+
+@quantity(
+    name="ua_eff_th",
+    requires=[],
+    description="effective poloidal velocity from friction flux",
+    unit="m/s",
+    location="face",
+)
+def calc_ua_eff_th(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    naf = intface(grid, ws["na"], 1, _intface_method(grid))
+    fc_s = grid.fc_s if grid.fc_s is not None else np.ones(grid.n_faces)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out = ws["fna_fha_th"] / naf / fc_s[:, None]
+    return np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+@quantity(
+    name="ua_eff_r",
+    requires=[],
+    description="effective radial velocity from friction flux",
+    unit="m/s",
+    location="face",
+)
+def calc_ua_eff_r(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    naf = intface(grid, ws["na"], 1, _intface_method(grid))
+    fc_s = grid.fc_s if grid.fc_s is not None else np.ones(grid.n_faces)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out = ws["fna_fha_r"] / naf / fc_s[:, None]
+    return np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+@quantity(
+    name="ua_diff_th",
+    requires=[],
+    description="diffusion velocity, poloidal",
+    unit="m/s",
+    location="face",
+)
+def calc_ua_diff_th(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    naf = intface(grid, ws["na"], 1, _intface_method(grid))
+    fc_s = grid.fc_s if grid.fc_s is not None else np.ones(grid.n_faces)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out = ws["fna_Dgradn_th"] / naf / fc_s[:, None]
+    return np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+@quantity(
+    name="ua_diff_r",
+    requires=[],
+    description="diffusion velocity, radial",
+    unit="m/s",
+    location="face",
+)
+def calc_ua_diff_r(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    naf = intface(grid, ws["na"], 1, _intface_method(grid))
+    fc_s = grid.fc_s if grid.fc_s is not None else np.ones(grid.n_faces)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out = ws["fna_Dgradn_r"] / naf / fc_s[:, None]
+    return np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+@quantity(
+    name="div_ua",
+    requires=[],
+    description="div of parallel velocity * pbs",
+    unit="s⁻¹",
+)
+def calc_div_ua(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    uaf = intface(grid, ws["ua"], 1, _intface_method(grid))
+    fc_pbs = grid.fc_pbs if grid.fc_pbs is not None else np.ones(grid.n_faces)
+    return _div_th(grid, uaf * fc_pbs[:, None])
+
+
+@quantity(
+    name="div_ua_eff",
+    requires=[],
+    description="div of effective velocity * fcS",
+    unit="s⁻¹",
+)
+def calc_div_ua_eff(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    fc_s = grid.fc_s if grid.fc_s is not None else np.ones(grid.n_faces)
+    fth = ws.get("ua_eff_th")
+    fr = ws.get("ua_eff_r")
+    if fth is None:
+        fth = calc_ua_eff_th(watch=watch, grid=grid)
+    if fr is None:
+        fr = calc_ua_eff_r(watch=watch, grid=grid)
+    return _div_pair(grid, fth * fc_s[:, None], fr * fc_s[:, None])
+
+
+@quantity(
+    name="div_ua_ExB",
+    requires=[],
+    description="div of ExB velocity (fna_nuExB / naf)",
+    unit="s⁻¹",
+)
+def calc_div_ua_ExB(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    naf = intface(grid, ws["na"], 1, _intface_method(grid))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        fth = ws["fna_nuExB_th"] / naf
+        fr = ws["fna_nuExB_r"] / naf
+    fth = np.nan_to_num(fth, nan=0.0, posinf=0.0, neginf=0.0)
+    fr = np.nan_to_num(fr, nan=0.0, posinf=0.0, neginf=0.0)
+    return _div_pair(grid, fth, fr)
+
+
+@quantity(
+    name="div_ua_diff",
+    requires=[],
+    description="div of diffusion velocity * fcS",
+    unit="s⁻¹",
+)
+def calc_div_ua_diff(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    fc_s = grid.fc_s if grid.fc_s is not None else np.ones(grid.n_faces)
+    fth = ws.get("ua_diff_th")
+    fr = ws.get("ua_diff_r")
+    if fth is None:
+        fth = calc_ua_diff_th(watch=watch, grid=grid)
+    if fr is None:
+        fr = calc_ua_diff_r(watch=watch, grid=grid)
+    return _div_pair(grid, fth * fc_s[:, None], fr * fc_s[:, None])
+
+
+@quantity(
+    name="div_fmo_viscurv",
+    requires=[],
+    description="div of curvature viscosity momentum flux",
+    unit="Pa/m",
+)
+def calc_div_fmo_viscurv(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    if comp is None:
+        return np.zeros(grid.n_cells)
+    ams = _species_mass_kg(comp)
+    uaf = intface(grid, ws["ua"], 1, _intface_method(grid))
+    fc_hz = ws.get("hzf")
+    if fc_hz is None:
+        fc_hz = intface(grid, grid.cv_hz, 1, _intface_method(grid)) if grid.cv_hz is not None else np.ones(grid.n_faces)
+    fth = ws["fna_mo_vis_th"] * fc_hz[:, None] * ams[None, :] * MP * uaf
+    fr = ws["fna_mo_vis_r"] * fc_hz[:, None] * ams[None, :] * MP * uaf
+    return _div_pair(grid, fth, fr)
+
+
+@quantity(
+    name="div_fmo_vis_BgradB",
+    requires=[],
+    description="div of ∇B viscosity momentum flux",
+    unit="Pa/m",
+)
+def calc_div_fmo_vis_BgradB(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    if comp is None:
+        return np.zeros(grid.n_cells)
+    ams = _species_mass_kg(comp)
+    uaf = intface(grid, ws["ua"], 1, _intface_method(grid))
+    fc_hz = ws.get("hzf")
+    if fc_hz is None:
+        fc_hz = intface(grid, grid.cv_hz, 1, _intface_method(grid)) if grid.cv_hz is not None else np.ones(grid.n_faces)
+    fth = ws["fna_nuBgradB_th"] * fc_hz[:, None] * ams[None, :] * MP * uaf
+    fr = ws["fna_nuBgradB_r"] * fc_hz[:, None] * ams[None, :] * MP * uaf
+    return _div_pair(grid, fth, fr)
+
+
+@quantity(
+    name="div_fna_dia_mdf",
+    requires=[],
+    description="div of diamagnetic (mdf) flux",
+    unit="m⁻³ s⁻¹",
+)
+def calc_div_fna_dia_mdf(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    return _div_pair(grid, ws["fna_dia_mdf_th"], ws["fna_dia_mdf_r"])
+
+
+@quantity(
+    name="div_fna_nuExB",
+    requires=[],
+    description="div of ExB drift flux",
+    unit="m⁻³ s⁻¹",
+)
+def calc_div_fna_nuExB(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    return _div_pair(grid, ws["fna_nuExB_th"], ws["fna_nuExB_r"])
+
+
+@quantity(
+    name="div_fna_nuExB_th",
+    requires=[],
+    description="poloidal div of ExB drift flux",
+    unit="m⁻³ s⁻¹",
+)
+def calc_div_fna_nuExB_th(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    return _div_th(grid, ws["fna_nuExB_th"])
+
+
+@quantity(
+    name="div_fna_nuExB_r",
+    requires=[],
+    description="radial div of ExB drift flux",
+    unit="m⁻³ s⁻¹",
+)
+def calc_div_fna_nuExB_r(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    return _div_r(grid, ws["fna_nuExB_r"])
+
+
+@quantity(
+    name="div_fna_nuBgradB",
+    requires=[],
+    description="div of ∇B drift flux",
+    unit="m⁻³ s⁻¹",
+)
+def calc_div_fna_nuBgradB(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    return _div_pair(grid, ws["fna_nuBgradB_th"], ws["fna_nuBgradB_r"])
+
+
+@quantity(
+    name="div_fna_nuBgradB_th",
+    requires=[],
+    description="poloidal div of ∇B drift flux",
+    unit="m⁻³ s⁻¹",
+)
+def calc_div_fna_nuBgradB_th(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    return _div_th(grid, ws["fna_nuBgradB_th"])
+
+
+@quantity(
+    name="div_fna_nuBgradB_r",
+    requires=[],
+    description="radial div of ∇B drift flux",
+    unit="m⁻³ s⁻¹",
+)
+def calc_div_fna_nuBgradB_r(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    return _div_r(grid, ws["fna_nuBgradB_r"])
+
+
+@quantity(
+    name="div_fna_nupar",
+    requires=[],
+    description="div of parallel particle flux",
+    unit="m⁻³ s⁻¹",
+)
+def calc_div_fna_nupar(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    return _div_th(grid, ws["fna_nupar_th"])
+
+
+@quantity(
+    name="div_fna_nuAN",
+    requires=[],
+    description="div of anomalous pinch flux",
+    unit="m⁻³ s⁻¹",
+)
+def calc_div_fna_nuAN(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    return _div_pair(grid, ws["fna_nuAN_th"], ws["fna_nuAN_r"])
+
+
+@quantity(
+    name="div_fna_RhieChow",
+    requires=[],
+    description="div of Rhie-Chow flux",
+    unit="m⁻³ s⁻¹",
+)
+def calc_div_fna_RhieChow(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    return _div_pair(grid, ws["fna_RhieChow_th"], ws["fna_RhieChow_r"])
+
+
+def _species_mass_kg(comp):
+    """Species mass in kg (am * mp), array of length ns."""
+    if comp is None:
+        return None
+    am = getattr(comp, "am", None)
+    if am is None:
+        am = getattr(comp, "ams", None)
+    if am is None:
+        return None
+    return np.asarray(am, dtype=np.float64) * MP

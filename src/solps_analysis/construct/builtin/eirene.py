@@ -253,7 +253,7 @@ def calc_tot_flux_th(vxdena, vydena, pux, puy, pfluxa, rfluxa, atm2mol, molA,
 
     result = np.zeros((grid.n_cells, max(1, comp.n_elements)))
 
-    if grid.version_number >= 3002:
+    if grid.version_float >= 3.002:
         # Unstructured path: use fort.46 vxdena/vydena + pux/puy projections
         # pux/puy are on B2 grid (size nCv or ntri)
         pux_1d = np.asarray(pux, dtype=np.float64).ravel()
@@ -327,7 +327,7 @@ def calc_tot_flux_r(vxdena, vydena, pvx, pvy, pfluxa, rfluxa, atm2mol, molA,
 
     result = np.zeros((grid.n_cells, max(1, comp.n_elements)))
 
-    if grid.version_number >= 3002:
+    if grid.version_float >= 3.002:
         pvx_1d = np.asarray(pvx, dtype=np.float64).ravel()
         pvy_1d = np.asarray(pvy, dtype=np.float64).ravel()
 

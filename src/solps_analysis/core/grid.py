@@ -200,6 +200,24 @@ class GridTopology:
     def n_sol(self) -> int:
         return self.n_cells - self.n_core_cells
 
+    @property
+    def version_float(self) -> float:
+        """Version as a float of major.minor (MATLAB str2num(version(1:6))).
+
+        '03.002.001' → 3.002 ; '3.2.1' → 3.2
+        """
+        v = self.version
+        if v.startswith("VERSION"):
+            v = v[7:]
+        parts = v.split()
+        if parts:
+            v = parts[0]
+        parts = v.split(".")
+        try:
+            return float(f"{int(parts[0])}.{int(parts[1]):03d}"[:6]) if len(parts) >= 2 else float(parts[0])
+        except (IndexError, ValueError):
+            return 0.0
+
     def cell_radial_neighbors(self, cell_index: int) -> list[int]:
         """Get radial neighbor indices for a given cell.
         Uses connectivity to walk radially (poloidally-aligned)."""

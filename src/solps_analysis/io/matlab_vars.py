@@ -16,6 +16,8 @@ import numpy as np
 
 from solps_analysis.io.variable_catalog import _catalog_transform
 
+MP = 1.672621637e-27  # kg, proton mass (MATLAB mp)
+
 
 def n_species(watch) -> int:
     """Number of B2 species (ns) from b2fstati."""
@@ -380,6 +382,24 @@ def build_workspace(watch) -> dict:
 
     for name, (bases, sign) in _CELL_SCALAR_VARS.items():
         ws[name] = get_scalar_var(watch, bases, sign=sign)
+
+    # MATLAB read_data_3x.m lines 873-876:
+    # fna_mo_vis_th = flubvx ./ fcHz ./ ams ./ mp
+    if "fna_mo_vis_th" in ws and ns > 0:
+        fc_hz = getattr(watch.grid, "fc_hz", None)
+        ams = species_am(watch)
+        if fc_hz is not None and ams.size == ns:
+            denom = fc_hz[:, None] * ams[None, :] * MP
+            ws["fna_mo_vis_th"] = ws["fna_mo_vis_th"] / np.where(denom == 0, np.nan, denom)
+            ws["fna_mo_vis_th"] = np.nan_to_num(ws["fna_mo_vis_th"], nan=0.0,
+                                                 posinf=0.0, neginf=0.0)
+
+    # MATLAB leaves these as zeros (no poloidal/radial counterpart):
+    # fna_nuAN_th, fna_RhieChow_r, fna_mo_vis_r (read_data_3x.m)
+    n_fc = watch.grid.n_faces
+    ws.setdefault("fna_nuAN_th", np.zeros((n_fc, ns)))
+    ws.setdefault("fna_RhieChow_r", np.zeros((n_fc, ns)))
+    ws.setdefault("fna_mo_vis_r", np.zeros((n_fc, ns)))
 
     # MATLAB fallback (read_data_3x.m lines 902-919): if b2urmo_etaPat_uax/y
     # missing, fmo_flo = fmo - fmo_cond
