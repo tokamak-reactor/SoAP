@@ -129,6 +129,12 @@ def _parse_dat_filename(filename: str) -> tuple[str, int | None] | None:
     """
     import re
 
+    # b2plot diagnostic outputs — not SOLPS variables: skip entirely.
+    # (q_plates.dat.dat mixes a table with trailing text lines, which
+    # triggers np.genfromtxt ConversionWarnings for no benefit.)
+    if filename.startswith("q_plates") or filename.startswith("Total_boundary_particle_fluxes"):
+        return None
+
     name = filename
     if name.endswith(".dat"):
         name = name[:-4]
