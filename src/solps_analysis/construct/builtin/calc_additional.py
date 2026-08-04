@@ -897,8 +897,833 @@ def _species_mass_kg(comp):
 
 
 # ──────────────────────────────────────────────────────────────
-# smo_vis_tot (lines 473-475)
+# Electron current fluxes & convective fluxes (lines 416-421)
 # ──────────────────────────────────────────────────────────────
+
+@quantity(
+    name="fne_curr_th",
+    requires=[],
+    description="electron current flux, poloidal",
+    unit="m⁻² s⁻¹",
+    location="face",
+)
+def calc_fne_curr_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    fna_curr = ws.get("fna_curr_th")
+    if fna_curr is None:
+        fna_curr = calc_fna_curr_th(watch=watch, grid=grid, comp=comp)
+    return (ws["fch_th"] - ws["fch_nuBgradB_th"] - ws["fch_par_th"]) / QE \
+        - fna_curr.sum(axis=1)
+
+
+@quantity(
+    name="fne_curr_r",
+    requires=[],
+    description="electron current flux, radial",
+    unit="m⁻² s⁻¹",
+    location="face",
+)
+def calc_fne_curr_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    fna_curr = ws.get("fna_curr_r")
+    if fna_curr is None:
+        fna_curr = calc_fna_curr_r(watch=watch, grid=grid, comp=comp)
+    return (ws["fch_r"] - ws["fch_nuBgradB_r"] - ws["fch_par_r"]) / QE \
+        - fna_curr.sum(axis=1)
+
+
+@quantity(
+    name="fna_conv_th",
+    requires=[],
+    description="convective particle flux, poloidal",
+    unit="m⁻² s⁻¹",
+    location="face",
+)
+def calc_fna_conv_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    return (ws["fna_nuExB_th"] + ws["fna_nupar_th"] + ws["fna_nuAN_th"]
+            + ws["fna_RhieChow_th"] + ws.get("fna_curr_th", 0))
+
+
+@quantity(
+    name="fna_conv_r",
+    requires=[],
+    description="convective particle flux, radial",
+    unit="m⁻² s⁻¹",
+    location="face",
+)
+def calc_fna_conv_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    return (ws["fna_nuExB_r"] + ws["fna_nuAN_r"] + ws["fna_RhieChow_r"]
+            + ws.get("fna_curr_r", 0))
+
+
+# ──────────────────────────────────────────────────────────────
+# Derived heat/momentum fluxes (lines 553-628)
+# ──────────────────────────────────────────────────────────────
+
+def _sum_over_charged(ws, arr_name: str, zs: np.ndarray) -> np.ndarray:
+    """Sum zs(is) * arr[:, is] over charged species (nFc,)."""
+    arr = ws[arr_name]
+    return (arr * zs[None, :]).sum(axis=1)
+
+
+@quantity(
+    name="fhe_nuExB_th",
+    requires=[],
+    description="electron heat flux from ExB drift, poloidal",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhe_nuExB_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    zs = _zs(comp)
+    tef = ws["tef"] if "tef" in ws else intface(grid, ws["te"], 1, _intface_method(grid))
+    return 1.5 * zs[None, :] * ws["fna_nuExB_th"] @ np.ones(len(zs)) * 0 + \
+        1.5 * _sum_over_charged(ws, "fna_nuExB_th", zs) * tef * QE if zs is not None \
+        else np.zeros(grid.n_faces)
+
+
+@quantity(
+    name="fhe_nuExB_r",
+    requires=[],
+    description="electron heat flux from ExB drift, radial",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhe_nuExB_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    zs = _zs(comp)
+    tef = ws["tef"] if "tef" in ws else intface(grid, ws["te"], 1, _intface_method(grid))
+    return 1.5 * _sum_over_charged(ws, "fna_nuExB_r", zs) * tef * QE
+
+
+@quantity(
+    name="fhe_nupar_th",
+    requires=[],
+    description="electron heat flux from parallel flow, poloidal",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhe_nupar_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    zs = _zs(comp)
+    tef = ws["tef"] if "tef" in ws else intface(grid, ws["te"], 1, _intface_method(grid))
+    return 1.5 * _sum_over_charged(ws, "fna_nupar_th", zs) * tef * QE \
+        - 1.5 * ws["fch_par_th"] * tef
+
+
+@quantity(
+    name="fhe_fnaAN_th",
+    requires=[],
+    description="electron heat flux from anomalous pinch, poloidal",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhe_fnaAN_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    zs = _zs(comp)
+    tef = ws["tef"] if "tef" in ws else intface(grid, ws["te"], 1, _intface_method(grid))
+    return 1.5 * (ws["fna_Dgradn_th"] * zs[None, :]).sum(axis=1) * tef * QE
+
+
+@quantity(
+    name="fhe_fnaAN_r",
+    requires=[],
+    description="electron heat flux from anomalous pinch, radial",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhe_fnaAN_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    zs = _zs(comp)
+    tef = ws["tef"] if "tef" in ws else intface(grid, ws["te"], 1, _intface_method(grid))
+    return 1.5 * ((ws["fna_nuAN_r"] + ws["fna_Dgradn_r"]) * zs[None, :]).sum(axis=1) * tef * QE
+
+
+def _fmo_drift(watch, grid, ws, fna_th, fna_r, factor=1.0):
+    """fmo_* = factor * fna_* * uaf * hzf * mp * am (nFc, ns)."""
+    ams = _species_mass_kg(ws.get("comp")) if False else None
+    from solps_analysis.io.matlab_vars import species_am
+    am = species_am(watch)
+    uaf = intface(grid, ws["ua"], 1, _intface_method(grid))
+    fc_hz = ws.get("fc_hz", np.ones(grid.n_faces))
+    pref = factor * fc_hz[:, None] * am[None, :] * MP * uaf
+    return fna_th * pref, fna_r * pref
+
+
+@quantity(
+    name="fmo_nuExB_th",
+    requires=[],
+    description="momentum flux from ExB drift, poloidal",
+    unit="Pa",
+    location="face",
+)
+def calc_fmo_nuExB_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    fth, _ = _fmo_drift(watch, grid, ws, ws["fna_nuExB_th"], ws["fna_nuExB_r"])
+    return fth
+
+
+@quantity(
+    name="fmo_nuExB_r",
+    requires=[],
+    description="momentum flux from ExB drift, radial",
+    unit="Pa",
+    location="face",
+)
+def calc_fmo_nuExB_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    _, fr = _fmo_drift(watch, grid, ws, ws["fna_nuExB_th"], ws["fna_nuExB_r"])
+    return fr
+
+
+@quantity(
+    name="fmo_nuBgradB_th",
+    requires=[],
+    description="momentum flux from ∇B drift, poloidal",
+    unit="Pa",
+    location="face",
+)
+def calc_fmo_nuBgradB_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    fth, _ = _fmo_drift(watch, grid, ws, ws["fna_nuBgradB_th"], ws["fna_nuBgradB_r"], factor=2.0)
+    return fth
+
+
+@quantity(
+    name="fmo_nuBgradB_r",
+    requires=[],
+    description="momentum flux from ∇B drift, radial",
+    unit="Pa",
+    location="face",
+)
+def calc_fmo_nuBgradB_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    _, fr = _fmo_drift(watch, grid, ws, ws["fna_nuBgradB_th"], ws["fna_nuBgradB_r"], factor=2.0)
+    return fr
+
+
+@quantity(
+    name="fmo_fnaAN_th",
+    requires=[],
+    description="momentum flux from anomalous pinch, poloidal",
+    unit="Pa",
+    location="face",
+)
+def calc_fmo_fnaAN_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    fth, _ = _fmo_drift(watch, grid, ws, ws["fna_Dgradn_th"], ws["fna_Dgradn_r"])
+    return fth
+
+
+@quantity(
+    name="fmo_fnaAN_r",
+    requires=[],
+    description="momentum flux from anomalous pinch, radial",
+    unit="Pa",
+    location="face",
+)
+def calc_fmo_fnaAN_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    _, fr = _fmo_drift(watch, grid, ws,
+                       (ws["fna_nuAN_r"] + ws["fna_Dgradn_r"]) * 0 + ws["fna_Dgradn_th"],
+                       ws["fna_nuAN_r"] + ws["fna_Dgradn_r"])
+    return fr
+
+
+@quantity(
+    name="fmo_fnapar_th",
+    requires=[],
+    description="momentum flux from parallel flow, poloidal",
+    unit="Pa",
+    location="face",
+)
+def calc_fmo_fnapar_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    fth, _ = _fmo_drift(watch, grid, ws, ws["fna_nupar_th"], ws["fna_nupar_th"])
+    return fth
+
+
+@quantity(
+    name="fmo_conv_th",
+    requires=[],
+    description="convective momentum flux, poloidal (ions only)",
+    unit="Pa",
+    location="face",
+)
+def calc_fmo_conv_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    ams = _species_mass_kg(comp)
+    zs = _zs(comp)
+    uaf = intface(grid, ws["ua"], 1, _intface_method(grid))
+    fc_hz = ws.get("fc_hz", np.ones(grid.n_faces))
+    out = ams[None, :] * uaf * ws["fna_th"] * fc_hz[:, None]
+    if zs is not None:
+        out[:, np.asarray(zs) <= 0] = 0
+    return out
+
+
+@quantity(
+    name="fmo_conv_r",
+    requires=[],
+    description="convective momentum flux, radial (ions only)",
+    unit="Pa",
+    location="face",
+)
+def calc_fmo_conv_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    ams = _species_mass_kg(comp)
+    zs = _zs(comp)
+    uaf = intface(grid, ws["ua"], 1, _intface_method(grid))
+    fc_hz = ws.get("fc_hz", np.ones(grid.n_faces))
+    out = ams[None, :] * uaf * ws["fna_r"] * fc_hz[:, None]
+    if zs is not None:
+        out[:, np.asarray(zs) <= 0] = 0
+    return out
+
+
+@quantity(
+    name="fna53_th",
+    requires=[],
+    description="5/2 particle flux, poloidal",
+    unit="m⁻² s⁻¹",
+    location="face",
+)
+def calc_fna53_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    return ws["fna_nuExB_th"] + ws["fna_nupar_th"]
+
+
+@quantity(
+    name="fna53_r",
+    requires=[],
+    description="5/2 particle flux, radial",
+    unit="m⁻² s⁻¹",
+    location="face",
+)
+def calc_fna53_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    return ws["fna_nuExB_r"]
+
+
+def _fne_sum(watch, grid, ws, name):
+    """fne_* = sum over species zs(is)*fna_*_th/r (nFc,)."""
+    zs = _zs(watch.b2_comp if hasattr(watch, "b2_comp") else None)
+    if zs is None:
+        from solps_analysis.io.matlab_vars import species_zamax
+        zs = species_zamax(watch)
+    return (ws[name] * zs[None, :]).sum(axis=1)
+
+
+@quantity(
+    name="fne_nuBgradB_th",
+    requires=[],
+    description="electron flux from ∇B drift, poloidal",
+    unit="m⁻² s⁻¹",
+    location="face",
+)
+def calc_fne_nuBgradB_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    zs = _zs(comp)
+    tef = ws["tef"] if "tef" in ws else intface(grid, ws["te"], 1, _intface_method(grid))
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out = -(ws["fna_nuBgradB_th"] * (tef / tif)[:, None] * zs[None, :] ** 2).sum(axis=1)
+    return np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+@quantity(
+    name="fne_nuBgradB_r",
+    requires=[],
+    description="electron flux from ∇B drift, radial",
+    unit="m⁻² s⁻¹",
+    location="face",
+)
+def calc_fne_nuBgradB_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    zs = _zs(comp)
+    tef = ws["tef"] if "tef" in ws else intface(grid, ws["te"], 1, _intface_method(grid))
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out = -(ws["fna_nuBgradB_r"] * (tef / tif)[:, None] * zs[None, :] ** 2).sum(axis=1)
+    return np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+@quantity(
+    name="fne_th",
+    requires=[],
+    description="total electron flux, poloidal",
+    unit="m⁻² s⁻¹",
+    location="face",
+)
+def calc_fne_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    zs = _zs(comp)
+    fna_curr = ws.get("fna_curr_th")
+    if fna_curr is None:
+        fna_curr = calc_fna_curr_th(watch=watch, grid=grid, comp=comp)
+    tef = ws["tef"] if "tef" in ws else intface(grid, ws["te"], 1, _intface_method(grid))
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        nuBg = -(ws["fna_nuBgradB_th"] * (tef / tif)[:, None] * zs[None, :] ** 2).sum(axis=1)
+    nuBg = np.nan_to_num(nuBg, nan=0.0, posinf=0.0, neginf=0.0)
+    return (ws["fna_nupar_th"] * zs[None, :]).sum(axis=1) \
+        + (ws["fna_nuExB_th"] * zs[None, :]).sum(axis=1) + nuBg \
+        + (ws["fna_Dgradn_th"] * zs[None, :]).sum(axis=1) \
+        + (ws["fna_nuAN_th"] * zs[None, :]).sum(axis=1) \
+        + (ws["fna_RhieChow_th"] * zs[None, :]).sum(axis=1) \
+        - ws["fch_par_th"] / QE \
+        + (fna_curr * zs[None, :]).sum(axis=1)
+
+
+@quantity(
+    name="fne_r",
+    requires=[],
+    description="total electron flux, radial",
+    unit="m⁻² s⁻¹",
+    location="face",
+)
+def calc_fne_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    zs = _zs(comp)
+    fna_curr = ws.get("fna_curr_r")
+    if fna_curr is None:
+        fna_curr = calc_fna_curr_r(watch=watch, grid=grid, comp=comp)
+    tef = ws["tef"] if "tef" in ws else intface(grid, ws["te"], 1, _intface_method(grid))
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        nuBg = -(ws["fna_nuBgradB_r"] * (tef / tif)[:, None] * zs[None, :] ** 2).sum(axis=1)
+    nuBg = np.nan_to_num(nuBg, nan=0.0, posinf=0.0, neginf=0.0)
+    return (ws["fna_nuExB_r"] * zs[None, :]).sum(axis=1) + nuBg \
+        + (ws["fna_Dgradn_r"] * zs[None, :]).sum(axis=1) \
+        + (ws["fna_nuAN_r"] * zs[None, :]).sum(axis=1) \
+        + (ws["fna_RhieChow_r"] * zs[None, :]).sum(axis=1) \
+        + (fna_curr * zs[None, :]).sum(axis=1)
+
+
+@quantity(
+    name="fne53_th",
+    requires=[],
+    description="5/2 electron flux, poloidal",
+    unit="m⁻² s⁻¹",
+    location="face",
+)
+def calc_fne53_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    zs = _zs(comp)
+    fna_curr = ws.get("fna_curr_th")
+    if fna_curr is None:
+        fna_curr = calc_fna_curr_th(watch=watch, grid=grid, comp=comp)
+    return (ws["fna_nuExB_th"] * zs[None, :]).sum(axis=1) \
+        - (fna_curr * zs[None, :]).sum(axis=1) \
+        + (ws["fna_nupar_th"] * zs[None, :]).sum(axis=1) - ws["fch_par_th"] / QE
+
+
+@quantity(
+    name="fne53_r",
+    requires=[],
+    description="5/2 electron flux, radial",
+    unit="m⁻² s⁻¹",
+    location="face",
+)
+def calc_fne53_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    zs = _zs(comp)
+    fna_curr = ws.get("fna_curr_r")
+    if fna_curr is None:
+        fna_curr = calc_fna_curr_r(watch=watch, grid=grid, comp=comp)
+    return (ws["fna_nuExB_r"] * zs[None, :]).sum(axis=1) \
+        - (fna_curr * zs[None, :]).sum(axis=1)
+
+
+@quantity(
+    name="c071",
+    requires=[],
+    description="parallel heat flux coefficient c071",
+    unit="",
+)
+def calc_c071(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    zeff = ws["Zeff"]
+    if np.max(np.abs(zeff)) == 0:
+        na = ws["na"]
+        from solps_analysis.io.matlab_vars import species_zamax
+        zamax = species_zamax(watch)
+        zeff = (na * zamax[None, :] ** 2).sum(axis=1) / np.maximum(ws["ne"], 1e-30)
+    return (1.56 * zeff * (1 + 1.4 * zeff) * (1 + 0.52 * zeff)
+            / (1 + 2.56 * zeff) / (1 + 0.29 * zeff) / (zeff + np.sqrt(2) / 2))
+
+
+@quantity(
+    name="fhe_qeprll_th",
+    requires=[],
+    description="electron heat flux from parallel current, poloidal",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhe_qeprll_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    c071 = ws.get("c071")
+    if c071 is None:
+        c071 = calc_c071(watch=watch, grid=grid)
+    c071f = intface(grid, c071, 1, "vol")
+    tef = ws["tef"] if "tef" in ws else intface(grid, ws["te"], 1, _intface_method(grid))
+    fch_pTe = _b2mn_param(watch, "b2tfhe_fch_pTe", 1.0)
+    return -c071f * ws["fch_par_th"] * tef * fch_pTe
+
+
+@quantity(
+    name="fhe_qeprll_r",
+    requires=[],
+    description="electron heat flux from parallel current, radial",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhe_qeprll_r(watch=None, grid=None, **kw):
+    return np.zeros(grid.n_faces)
+
+
+@quantity(
+    name="div_fhe_qeprll",
+    requires=[],
+    description="div of electron parallel-current heat flux",
+    unit="W/m³",
+)
+def calc_div_fhe_qeprll(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    fth = ws.get("fhe_qeprll_th")
+    if fth is None:
+        fth = calc_fhe_qeprll_th(watch=watch, grid=grid, comp=comp)
+    return _div_th(grid, fth)
+
+
+def _b2mn_param(watch, key: str, default: float) -> float:
+    """Read a scalar parameter from b2mn.dat (MATLAB read_b2mn_dat.m)."""
+    try:
+        from pathlib import Path
+        path = Path(watch.path) / ".." / "b2mn.dat"
+        if not path.exists():
+            path = Path(watch.path) / "b2mn.dat"
+        if not path.exists():
+            return default
+        for line in path.read_text(errors="ignore").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or line.startswith("//"):
+                continue
+            parts = line.replace("'", "").split()
+            if len(parts) >= 2 and parts[0] == key:
+                try:
+                    return float(parts[1])
+                except ValueError:
+                    return default
+    except Exception:
+        pass
+    return default
+
+
+@quantity(
+    name="fhe_alphaEhat_th",
+    requires=[],
+    description="electron heat flux from parallel E-hat, poloidal",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhe_alphaEhat_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    fth = ws.get("fhe_qeprll_th")
+    if fth is None:
+        fth = calc_fhe_qeprll_th(watch=watch, grid=grid, comp=comp)
+    alfTeEh = _b2mn_param(watch, "b2tfhe_alfTeEh", 0.0)
+    fch_pTe = _b2mn_param(watch, "b2tfhe_fch_pTe", 1.0)
+    if fch_pTe == 1:
+        alfTeEh = 0.0
+    if alfTeEh > 0:
+        # b2xehx contribution (requires external E-field solver)
+        tef = ws["tef"] if "tef" in ws else intface(grid, ws["te"], 1, _intface_method(grid))
+        calf = ws.get("calf_clLucFlim_th", np.zeros(grid.n_faces))
+        fth = fth + calf * tef * _b2xehx_approx(grid, ws) * QE * alfTeEh
+    return fth
+
+
+def _b2xehx_approx(grid, ws):
+    """Approximation of b2xehx (external parallel E-field) — zero for now.
+
+    MATLAB b2xehx solves the parallel current balance; only needed when
+    b2tfhe_alfTeEh > 0 (off by default).
+    """
+    return np.zeros(grid.n_faces)
+
+
+@quantity(
+    name="fhe_alphaEhat_r",
+    requires=[],
+    description="electron heat flux from parallel E-hat, radial",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhe_alphaEhat_r(watch=None, grid=None, **kw):
+    return np.zeros(grid.n_faces)
+
+
+def _fhi_conv_sum(ws, fname: str) -> np.ndarray:
+    """fhi_* = 1.5 * sum(fna_*) * tif * qe (nFc,)."""
+    return 1.5 * ws[fname].sum(axis=1)
+
+
+@quantity(
+    name="fhi_nuExB_th",
+    requires=[],
+    description="ion heat flux from ExB drift, poloidal",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhi_nuExB_th(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    return _fhi_conv_sum(ws, "fna_nuExB_th") * tif * QE
+
+
+@quantity(
+    name="fhi_nuExB_r",
+    requires=[],
+    description="ion heat flux from ExB drift, radial",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhi_nuExB_r(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    return _fhi_conv_sum(ws, "fna_nuExB_r") * tif * QE
+
+
+@quantity(
+    name="fhi_nupar_th",
+    requires=[],
+    description="ion heat flux from parallel flow, poloidal",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhi_nupar_th(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    return _fhi_conv_sum(ws, "fna_nupar_th") * tif * QE
+
+
+@quantity(
+    name="fhi_fnaAN_th",
+    requires=[],
+    description="ion heat flux from anomalous pinch, poloidal",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhi_fnaAN_th(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    return 1.5 * (ws["fna_nuAN_th"] + ws["fna_Dgradn_th"]).sum(axis=1) * tif * QE
+
+
+@quantity(
+    name="fhi_fnaAN_r",
+    requires=[],
+    description="ion heat flux from anomalous pinch, radial",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhi_fnaAN_r(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    return 1.5 * (ws["fna_nuAN_r"] + ws["fna_Dgradn_r"]).sum(axis=1) * tif * QE
+
+
+@quantity(
+    name="fhi_conv_th",
+    requires=[],
+    description="convective ion heat flux, poloidal",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhi_conv_th(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    return _fhi_conv_sum(ws, "fna_th") * tif * QE
+
+
+@quantity(
+    name="fhi_conv_r",
+    requires=[],
+    description="convective ion heat flux, radial",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhi_conv_r(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    return _fhi_conv_sum(ws, "fna_r") * tif * QE
+
+
+@quantity(
+    name="fhi_fni_th",
+    requires=[],
+    description="ion heat flux from friction, poloidal",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhi_fni_th(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    return 1.5 * ws["fna_fha_th"].sum(axis=1) * tif * QE
+
+
+@quantity(
+    name="fhi_fni_r",
+    requires=[],
+    description="ion heat flux from friction, radial",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhi_fni_r(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    return 1.5 * ws["fna_fha_r"].sum(axis=1) * tif * QE
+
+
+@quantity(
+    name="fhi_curr_th",
+    requires=[],
+    description="ion heat flux from current, poloidal",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhi_curr_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    fna_curr = ws.get("fna_curr_th")
+    if fna_curr is None:
+        fna_curr = calc_fna_curr_th(watch=watch, grid=grid, comp=comp)
+    return 1.5 * fna_curr.sum(axis=1) * tif * QE
+
+
+@quantity(
+    name="fhi_curr_r",
+    requires=[],
+    description="ion heat flux from current, radial",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhi_curr_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    fna_curr = ws.get("fna_curr_r")
+    if fna_curr is None:
+        fna_curr = calc_fna_curr_r(watch=watch, grid=grid, comp=comp)
+    return 1.5 * fna_curr.sum(axis=1) * tif * QE
+
+
+@quantity(
+    name="fhe_conv_th",
+    requires=[],
+    description="convective electron heat flux, poloidal",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhe_conv_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    tef = ws["tef"] if "tef" in ws else intface(grid, ws["te"], 1, _intface_method(grid))
+    fne_th = ws.get("fne_th")
+    if fne_th is None:
+        fne_th = calc_fne_th(watch=watch, grid=grid, comp=comp)
+    return 1.5 * fne_th * tef * QE
+
+
+@quantity(
+    name="fhe_conv_r",
+    requires=[],
+    description="convective electron heat flux, radial",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhe_conv_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    tef = ws["tef"] if "tef" in ws else intface(grid, ws["te"], 1, _intface_method(grid))
+    fne_r = ws.get("fne_r")
+    if fne_r is None:
+        fne_r = calc_fne_r(watch=watch, grid=grid, comp=comp)
+    return 1.5 * fne_r * tef * QE
+
+
+@quantity(
+    name="fhe_gradte_th",
+    requires=[],
+    description="conductive electron heat flux, poloidal",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhe_gradte_th(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    return ws["fhe_cond_th"]
+
+
+@quantity(
+    name="fhe_gradte_r",
+    requires=[],
+    description="conductive electron heat flux, radial",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhe_gradte_r(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    return ws["fhe_cond_r"]
+
+
+@quantity(
+    name="fhi_gradte_th",
+    requires=[],
+    description="conductive ion heat flux, poloidal",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhi_gradte_th(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    return ws["fhi_cond_th"]
+
+
+@quantity(
+    name="fhi_gradte_r",
+    requires=[],
+    description="conductive ion heat flux, radial",
+    unit="W/m²",
+    location="face",
+)
+def calc_fhi_gradte_r(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    return ws["fhi_cond_r"]
+
+
+@quantity(
+    name="fh_joule_th",
+    requires=[],
+    description="Joule heating flux, poloidal",
+    unit="W/m²",
+    location="face",
+)
+def calc_fh_joule_th(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    pof = ws["pof"] if "pof" in ws else intface(grid, ws["po"], 0, _intface_method(grid))
+    return ws["fch_th"] * pof
+
+
+@quantity(
+    name="fh_joule_r",
+    requires=[],
+    description="Joule heating flux, radial",
+    unit="W/m²",
+    location="face",
+)
+def calc_fh_joule_r(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    pof = ws["pof"] if "pof" in ws else intface(grid, ws["po"], 0, _intface_method(grid))
+    return ws["fch_r"] * pof
 
 @quantity(
     name="smo_vis_tot",

@@ -407,6 +407,7 @@ def build_workspace(watch) -> dict:
     ws.setdefault("fna_nuAN_th", np.zeros((n_fc, ns)))
     ws.setdefault("fna_RhieChow_r", np.zeros((n_fc, ns)))
     ws.setdefault("fna_mo_vis_r", np.zeros((n_fc, ns)))
+    ws.setdefault("fch_par_r", np.zeros(n_fc))
 
     # MATLAB fallback (read_data_3x.m lines 902-919): if b2urmo_etaPat_uax/y
     # missing, fmo_flo = fmo - fmo_cond
