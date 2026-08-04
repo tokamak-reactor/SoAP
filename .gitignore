@@ -41,3 +41,7 @@ coverage.xml
 # Temporary
 tmp/
 temp/
+
+# Jupyter artifacts
+.virtual_documents/
+.ipynb_checkpoints/
