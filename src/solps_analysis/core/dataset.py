@@ -36,6 +36,74 @@ from solps_analysis.io.b2fstate_reader import (
 )
 from solps_analysis.io.variable_catalog import _catalog_transform
 
+# ──────────────────────────────────────────────────────────────
+# Process-pool .dat reader (parallel from_directory)
+#
+# ThreadPool does NOT help: np.genfromtxt/np.loadtxt are pure-Python
+# parsers holding the GIL, and files are small (disk is not the
+# bottleneck). A process pool with fork + initializer inherits the grid
+# once per worker; only file paths cross the queue.
+# ──────────────────────────────────────────────────────────────
+
+_WORKER_GRID: GridTopology | None = None
+
+
+def _worker_init(grid: GridTopology) -> None:
+    global _WORKER_GRID
+    _WORKER_GRID = grid
+
+
+def _transform_values(grid: GridTopology, file_path: str, values: np.ndarray) -> np.ndarray:
+    """Catalog-aware 2D→1D transform for structured grids (pure function)."""
+    if grid.is_structured and grid.imap_cv is not None and values.ndim == 2:
+        ny, nx = values.shape
+        ey, ex = grid.ny + 2, grid.nx + 2
+        if ny == ey and nx == ex:
+            transform = _catalog_transform(file_path)
+            if transform == "face_x":
+                values = _structured_to_faces_impl(grid, values, dim=1)
+            elif transform == "face_y":
+                values = _structured_to_faces_impl(grid, values, dim=2)
+            else:
+                values = _structured_to_unstructured_impl(grid, values)
+        elif ny == ex and nx == ey:
+            transform = _catalog_transform(file_path)
+            if transform == "face_x":
+                values = _structured_to_faces_impl(grid, values.T, dim=1)
+            elif transform == "face_y":
+                values = _structured_to_faces_impl(grid, values.T, dim=2)
+            else:
+                values = _structured_to_unstructured_impl(grid, values.T)
+    return np.ascontiguousarray(values, dtype=np.float64)
+
+
+def _structured_to_faces_impl(grid: GridTopology, data_2d: np.ndarray, dim: int = 1) -> np.ndarray:
+    n_faces = grid.n_faces
+    result = np.zeros(n_faces, dtype=np.float64)
+    imap = grid.imap_fcx if dim == 1 else grid.imap_fcy
+    if imap is None:
+        return result
+    mask = imap > 0
+    result[imap[mask].astype(np.intp) - 1] = data_2d.T[mask]
+    return result
+
+
+def _structured_to_unstructured_impl(grid: GridTopology, data_2d: np.ndarray) -> np.ndarray:
+    n_cells = grid.n_cells
+    result = np.zeros(n_cells, dtype=np.float64)
+    imap = grid.imap_cv
+    if imap is None:
+        return result
+    mask = imap > 0
+    result[imap[mask].astype(np.intp) - 1] = data_2d.T[mask]
+    return result
+
+
+def _worker_read(file_path: str) -> np.ndarray:
+    from solps_analysis.io.data_readers import read_watch_file
+    values = read_watch_file(file_path)
+    return _transform_values(_WORKER_GRID, file_path, values)
+
 
 @dataclass
 class SolpsWatch:
@@ -79,6 +147,7 @@ class SolpsWatch:
         load_variables: bool = True,
         variables: list[str] | None = None,
         load_eirene: bool = False,
+        max_workers: int | None = None,
     ) -> "SolpsWatch":
         """Load a complete watch from its directory.
 
@@ -87,6 +156,8 @@ class SolpsWatch:
             load_variables: Scan and load .dat files from output/.
             variables: If given, only load these specific variables.
             load_eirene: Also load EIRENE and numerical data.
+            max_workers: Parallel .dat reading. None → auto
+                (min(16, cpu_count*2)). 1 → sequential (old behaviour).
         """
         path = Path(path).expanduser().resolve()
 
@@ -118,9 +189,9 @@ class SolpsWatch:
                 file_index = scan_output_directory(str(output_dir))
                 watch._file_index = file_index
                 if variables:
-                    watch._load_selected(variables)
+                    watch._load_selected(variables, max_workers=max_workers)
                 else:
-                    watch._load_all()
+                    watch._load_all(max_workers=max_workers)
 
         # 4. Load EIRENE and numerical data
         if load_eirene:
@@ -188,35 +259,77 @@ class SolpsWatch:
         has_input = (self.path / "input.dat").exists()
         self.eirene_flag = has_ft44 and has_ft46
 
-    def _load_all(self) -> None:
-        """Load all variables from output directory."""
-        for var_name, file_path in self._file_index.items():
-            try:
-                data = self._read_dat_file(file_path)
-                meta = VariableMeta(
-                    name=var_name,
-                    location=self._infer_location(var_name),
-                    source_file=str(file_path),
-                )
-                self._variables[var_name] = SolpsVariable(data=data, meta=meta)
-            except Exception:
-                pass
+    @staticmethod
+    def _default_workers(max_workers: int | None) -> int:
+        """Parallel .dat read workers: None → auto, 1 → sequential."""
+        if max_workers is None:
+            import os
+            return max(1, min(16, (os.cpu_count() or 4) * 2))
+        return max(1, int(max_workers))
 
-    def _load_selected(self, var_names: list[str]) -> None:
-        """Load only selected variables."""
-        for var_name in var_names:
-            file_path = self._file_index.get(var_name)
-            if file_path:
-                try:
-                    data = self._read_dat_file(file_path)
-                    meta = VariableMeta(
-                        name=var_name,
-                        location=self._infer_location(var_name),
-                        source_file=str(file_path),
-                    )
-                    self._variables[var_name] = SolpsVariable(data=data, meta=meta)
-                except Exception:
-                    pass
+    def _load_all(self, max_workers: int | None = None) -> None:
+        """Load all variables from output directory (parallel by default).
+
+        Uses a process pool: np.genfromtxt/np.loadtxt hold the GIL, so
+        threads give no speedup; processes fork and inherit the grid once
+        (Linux), only file paths cross the queue.
+        """
+        from concurrent.futures import ProcessPoolExecutor
+
+        items = list(self._file_index.items())
+        n_workers = self._default_workers(max_workers)
+        if n_workers == 1 or len(items) < 32:
+            for var_name, file_path in items:
+                self._load_one(var_name, file_path)
+            return
+
+        paths = [fp for _, fp in items]
+        with ProcessPoolExecutor(
+            max_workers=n_workers,
+            initializer=_worker_init,
+            initargs=(self.grid,),
+        ) as pool:
+            for (vn, fp), data in zip(items, pool.map(_worker_read, paths, chunksize=16)):
+                self._dat_cache[fp] = data
+                self._store_variable(vn, fp, data)
+
+    def _load_selected(self, var_names: list[str], max_workers: int | None = None) -> None:
+        """Load only selected variables (parallel by default)."""
+        from concurrent.futures import ProcessPoolExecutor
+
+        items = [(vn, self._file_index.get(vn)) for vn in var_names]
+        items = [(vn, fp) for vn, fp in items if fp]
+        n_workers = self._default_workers(max_workers)
+        if n_workers == 1 or len(items) < 32:
+            for var_name, file_path in items:
+                self._load_one(var_name, file_path)
+            return
+
+        paths = [fp for _, fp in items]
+        with ProcessPoolExecutor(
+            max_workers=n_workers,
+            initializer=_worker_init,
+            initargs=(self.grid,),
+        ) as pool:
+            for (vn, fp), data in zip(items, pool.map(_worker_read, paths, chunksize=16)):
+                self._dat_cache[fp] = data
+                self._store_variable(vn, fp, data)
+
+    def _load_one(self, var_name: str, file_path: str) -> None:
+        """Sequentially read a single variable file."""
+        try:
+            data = self._read_dat_file(file_path)
+            self._store_variable(var_name, file_path, data)
+        except Exception:
+            pass
+
+    def _store_variable(self, var_name: str, file_path: str, data: np.ndarray) -> None:
+        meta = VariableMeta(
+            name=var_name,
+            location=self._infer_location(var_name),
+            source_file=str(file_path),
+        )
+        self._variables[var_name] = SolpsVariable(data=data, meta=meta)
 
     def _read_dat_file(self, file_path: str) -> np.ndarray:
         """Read a .dat file and convert to 1D if structured grid.
@@ -231,30 +344,7 @@ class SolpsWatch:
             return cached
 
         values = read_watch_file(file_path)
-
-        # Convert 2D → 1D for structured grids
-        if self.grid.is_structured and self.grid.imap_cv is not None and values.ndim == 2:
-            ny, nx = values.shape
-            ey, ex = self.grid.ny + 2, self.grid.nx + 2
-            if ny == ey and nx == ex:
-                # Determine transform: cell (default) or face (dim 1/2)
-                transform = _catalog_transform(file_path)
-                if transform == "face_x":
-                    values = self._structured_to_faces(values, dim=1)
-                elif transform == "face_y":
-                    values = self._structured_to_faces(values, dim=2)
-                else:
-                    values = self._structured_to_unstructured(values)
-            elif ny == ex and nx == ey:
-                transform = _catalog_transform(file_path)
-                if transform == "face_x":
-                    values = self._structured_to_faces(values.T, dim=1)
-                elif transform == "face_y":
-                    values = self._structured_to_faces(values.T, dim=2)
-                else:
-                    values = self._structured_to_unstructured(values.T)
-
-        values = np.ascontiguousarray(values, dtype=np.float64)
+        values = _transform_values(self.grid, file_path, values)
         self._dat_cache[file_path] = values
         return values
 
