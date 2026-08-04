@@ -71,6 +71,7 @@ class B2Composition:
     element_indices_list: list[list[int]] = field(default_factory=list)
     element_charge: np.ndarray | None = None   # (n_elements,) max charge per element
     element_mass: np.ndarray | None = None     # (n_elements,) mass per element
+    ion_pot: np.ndarray | None = None          # (ns,) ionization potentials (eV), 0 for neutrals
 
     # Lookup dicts
     _elem_to_indices: dict = field(default_factory=dict)
