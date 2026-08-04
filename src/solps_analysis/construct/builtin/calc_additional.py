@@ -3316,6 +3316,74 @@ def calc_N_tot_B25(watch=None, grid=None, comp=None, **kw):
 
 
 # ──────────────────────────────────────────────────────────────
+# P_pfr + wall neutral fluxes (lines 171-341, wg-branch)
+# ──────────────────────────────────────────────────────────────
+
+@quantity(
+    name="P_pfr",
+    requires=[],
+    description="neutral pressure in private flux region",
+    unit="Pa",
+)
+def calc_P_pfr(watch=None, grid=None, comp=None, **kw):
+    """P_pfr = sum((nD_at*T_at + nD2*T_mol) * weight) / sum(weight).
+
+    MATLAB: uses user_params.pfr_cvs + pr_weight; 0 when not configured.
+    """
+    ws = _ws(watch)
+    neut = getattr(watch, "neut", None)
+    if neut is None:
+        return np.array([0.0])
+    # user-configured PFR cells (not present in this watch → 0, as MATLAB)
+    pfr_cvs = getattr(watch, "pfr_cvs", None)
+    if pfr_cvs is None or len(pfr_cvs) == 0:
+        return np.array([0.0])
+    from solps_analysis.construct.builtin.eirene import _unpack_eirene_cell_data
+    dab2 = _unpack_eirene_cell_data(np.asarray(neut["dab2"]), grid)
+    tab2 = _unpack_eirene_cell_data(np.asarray(neut["tab2"]), grid)
+    dmb2 = _unpack_eirene_cell_data(np.asarray(neut["dmb2"]), grid)
+    tmb2 = _unpack_eirene_cell_data(np.asarray(neut["tmb2"]), grid)
+    pr_weight = getattr(watch, "pr_weight", np.ones(len(pfr_cvs)))
+    tmp = dab2[:, 0] * tab2[:, 0] + dmb2[:, 0] * tmb2[:, 0]
+    p = (tmp[pfr_cvs] * pr_weight).sum() / max(pr_weight.sum(), 1e-30)
+    return np.array([p])
+
+
+@quantity(
+    name="fh_nutpr_th",
+    requires=[],
+    description="kinetic energy flux of reflected neutrals (from ions)",
+    unit="W/m²",
+    location="face",
+)
+def calc_fh_nutpr_th(watch=None, grid=None, comp=None, **kw):
+    """Zero unless fort.44 provides wld.ewldrp_res (not in current watches)."""
+    return np.zeros(grid.n_faces)
+
+
+@quantity(
+    name="fh_neut_tot_th",
+    requires=[],
+    description="total neutral energy flux to wall",
+    unit="W/m²",
+    location="face",
+)
+def calc_fh_neut_tot_th(watch=None, grid=None, comp=None, **kw):
+    return np.zeros(grid.n_faces)
+
+
+@quantity(
+    name="fn_sput_wall",
+    requires=[],
+    description="sputtered neutral flux at wall",
+    unit="m⁻²s⁻¹",
+    location="face",
+)
+def calc_fn_sput_wall(watch=None, grid=None, comp=None, **kw):
+    return np.zeros(grid.n_faces)
+
+
+# ──────────────────────────────────────────────────────────────
 # Gas puff / fueling / seeding (lines 1343-1410)
 # ──────────────────────────────────────────────────────────────
 
