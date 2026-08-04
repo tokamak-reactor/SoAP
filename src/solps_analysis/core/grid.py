@@ -87,8 +87,12 @@ class GridTopology:
 
     # --- Additional geometry arrays ---
     fc_qalf: np.ndarray | None = None  # (n_faces, 2) cos/sin of alpha
+    fc_qgam: np.ndarray | None = None  # (n_faces, 2) cos/sin of gamma
+    fc_qbet: np.ndarray | None = None  # (n_faces, 2) cos/sin of beta
     fc_pbs: np.ndarray | None = None   # (n_faces,) magnetic contact area
+    fc_hz: np.ndarray | None = None    # (n_faces,) toroidal metric hz at faces
     cv_eb: np.ndarray | None = None    # (n_cells, 3) unit vector along B
+    cv_qgam: np.ndarray | None = None  # (n_cells, 2) cos/sin of gamma
     intcell_p: np.ndarray | None = None  # interpolation factors (poloidal)
     intcell_r: np.ndarray | None = None  # interpolation factors (radial)
 
@@ -159,6 +163,11 @@ class GridTopology:
     imap_cv: np.ndarray | None = None  # (nx+2, ny+2) cell index mapping
     imap_fcx: np.ndarray | None = None # (nx+2, ny+2) x-face mapping
     imap_fcy: np.ndarray | None = None # (nx+2, ny+2) y-face mapping
+    imap_vx: np.ndarray | None = None  # (nx+2, ny+2) vertex mapping
+
+    # --- Poloidal flux (structured grids: averaged from fpsi corners) ---
+    cv_fpsi: np.ndarray | None = None  # (n_cells,) poloidal flux at cell centers
+    fc_fpsi: np.ndarray | None = None  # (n_faces,) poloidal flux at face centers
 
     # --- Derived regions (computed) ---
     inner_midplane_cells: np.ndarray | None = None

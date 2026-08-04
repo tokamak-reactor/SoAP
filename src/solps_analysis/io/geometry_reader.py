@@ -116,6 +116,11 @@ def _load_structured_grid(raw: dict[str, Any]) -> GridTopology:
         nx + 2, ny + 2, 4, order="F"
     )
 
+    # Magnetic contact area (pbs) — 2 components per cell
+    pbs = _ensure_float(raw.get("pbs", np.zeros((nx + 2, ny + 2, 2)))).reshape(
+        nx + 2, ny + 2, 2, order="F"
+    )
+
     # Region data
     region = _ensure_float(raw.get("region", np.zeros((nx + 2, ny + 2, 3)))).reshape(
         nx + 2, ny + 2, 3, order="F"
@@ -218,6 +223,7 @@ def _load_structured_grid(raw: dict[str, Any]) -> GridTopology:
     grid.imap_cv = imap_cv
     grid.imap_fcx = imap_fcx
     grid.imap_fcy = imap_fcy
+    grid.imap_vx = imap_vx
 
     # --- Build connectivity ---
     cv_fc_p = np.zeros((nCv, 2), dtype=np.int32)
@@ -245,14 +251,22 @@ def _load_structured_grid(raw: dict[str, Any]) -> GridTopology:
 
     grid.cv_fc_p = cv_fc_p
     grid.cv_fc = cv_fc
+    grid.cv_vx_p = cv_vx_p
+    grid.cv_vx = cv_vx
+    grid.intcell_p = intcell_p
+    grid.intcell_r = intcell_r
 
     # --- Cell-centered data ---
     cv_bb = np.zeros((nCv, 4), dtype=np.float64)
+    cv_eb = np.zeros((nCv, 3), dtype=np.float64)
     cv_x = np.zeros(nCv, dtype=np.float64)
     cv_y = np.zeros(nCv, dtype=np.float64)
     cv_vol_arr = np.zeros(nCv, dtype=np.float64)
     cv_qgam = np.zeros((nCv, 2), dtype=np.float64)
     cv_hz_arr = np.zeros(nCv, dtype=np.float64)
+
+    # BndLbl for guard cells (west -10, east -30, south -20, north -40)
+    bnd_lbl = np.zeros(nCg, dtype=np.int32)
 
     for iy in range(ny + 2):
         for ix in range(nx + 2):
@@ -268,14 +282,171 @@ def _load_structured_grid(raw: dict[str, Any]) -> GridTopology:
             cv_qgam[ci, 0] = qz[ix, iy, 1]  # cos(gamma)
             cv_qgam[ci, 1] = -qz[ix, iy, 0]  # sin(gamma)
 
+            # cvEb: unit vector along B (MATLAB read_b2fgmtry_30 lines 517-522)
+            e1 = (crx[ix, iy, 3] + crx[ix, iy, 1]) - (crx[ix, iy, 2] + crx[ix, iy, 0])
+            e2 = (cry[ix, iy, 3] + cry[ix, iy, 1]) - (cry[ix, iy, 2] + cry[ix, iy, 0])
+            t0 = np.sqrt(e1 * e1 + e2 * e2)
+            if t0 > 0:
+                cv_eb[ci, 0] = abs(bb[ix, iy, 0]) / bb[ix, iy, 3] * e1 / t0
+                cv_eb[ci, 1] = abs(bb[ix, iy, 0]) / bb[ix, iy, 3] * e2 / t0
+            cv_eb[ci, 2] = bb[ix, iy, 2] / bb[ix, iy, 3]
+
+            # cvFc / cvVx / intcellP / intcellR for interior cells
+            if idx <= nCi:
+                p = int(cv_fc_p[ci, 0])
+                pv = int(cv_vx_p[ci, 0])
+                cv_fc[p + 0] = imap_fcx[ix, iy]
+                cv_fc[p + 1] = imap_fcx[right[ix, iy] + 1, iy]
+                cv_fc[p + 2] = imap_fcy[ix, iy]
+                cv_fc[p + 3] = imap_fcy[ix, top[ix, iy] + 1]
+                cv_vx[pv + 0] = imap_vx[ix, iy]
+                cv_vx[pv + 1] = imap_vx[right[ix, iy] + 1, iy]
+                cv_vx[pv + 2] = imap_vx[ix, top[ix, iy] + 1]
+                cv_vx[pv + 3] = imap_vx[right[ix, top[ix, iy] + 1] + 1, top[ix, iy] + 1]
+                intcell_p[p + 0] = 1.0
+                intcell_p[p + 1] = 1.0
+                intcell_p[p + 2] = 0.0
+                intcell_p[p + 3] = 0.0
+                intcell_r[p + 0] = 0.0
+                intcell_r[p + 1] = 0.0
+                intcell_r[p + 2] = 1.0
+                intcell_r[p + 3] = 1.0
+            else:
+                # guard cell: single face, one or two vertices
+                p = int(cv_fc_p[ci, 0])
+                pv = int(cv_vx_p[ci, 0])
+                gi = idx - nCi - 1  # 0-based guard index
+                if left[ix, iy] == -2:  # western boundary
+                    cv_fc[p] = imap_fcx[right[ix, iy] + 1, iy]
+                    cv_vx[pv] = imap_vx[right[ix, iy] + 1, iy]
+                    bnd_lbl[gi] = -10
+                elif right[ix, iy] == nx + 1:  # eastern boundary
+                    cv_fc[p] = imap_fcx[ix, iy]
+                    cv_vx[pv] = imap_vx[ix, iy]
+                    bnd_lbl[gi] = -30
+                elif bottom[ix, iy] == -2:  # southern boundary
+                    cv_fc[p] = imap_fcy[ix, top[ix, iy] + 1]
+                    cv_vx[pv] = imap_vx[ix, top[ix, iy] + 1]
+                    bnd_lbl[gi] = -20
+                elif top[ix, iy] == ny + 1:  # northern boundary
+                    cv_fc[p] = imap_fcy[ix, iy]
+                    cv_vx[pv] = imap_vx[ix, iy]
+                    bnd_lbl[gi] = -40
+
     grid.cv_bb = cv_bb
+    grid.cv_eb = cv_eb
     grid.cv_x = cv_x
     grid.cv_y = cv_y
     grid.cv_vol = cv_vol_arr
     grid.cv_hz = cv_hz_arr
+    grid.cv_qgam = cv_qgam
     # Store cell corner coordinates for 2D plotting
     grid.cv_crn_r = crx  # (nx+2, ny+2, 4)
     grid.cv_crn_z = cry
+
+    # --- Face linking arrays (fcCv, fcVx) ---
+    fc_cv = np.zeros((nFc, 2), dtype=np.int32)
+    fc_vx = np.zeros((nFc, 2), dtype=np.int32)
+
+    for iy in range(ny + 2):
+        for ix in range(nx + 2):
+            fcx = imap_fcx[ix, iy]
+            if fcx != 0:
+                # x-face = west face of cell (ix, iy); crossed by x-component of flux
+                fc_cv[fcx - 1, 0] = imap_cv[left[ix, iy] + 1, iy]
+                fc_cv[fcx - 1, 1] = imap_cv[ix, iy]
+                fc_vx[fcx - 1, 0] = imap_vx[ix, iy]
+                fc_vx[fcx - 1, 1] = imap_vx[ix, top[ix, iy] + 1]
+
+    for ix in range(nx + 2):
+        for iy in range(ny + 2):
+            fcy = imap_fcy[ix, iy]
+            if fcy != 0:
+                # y-face = bottom face of cell (ix, iy); crossed by y-component of flux
+                fc_cv[fcy - 1, 0] = imap_cv[ix, bottom[ix, iy] + 1]
+                fc_cv[fcy - 1, 1] = imap_cv[ix, iy]
+                fc_vx[fcy - 1, 0] = imap_vx[ix, iy]
+                fc_vx[fcy - 1, 1] = imap_vx[right[ix, iy] + 1, iy]
+
+    # --- Merge X-point vertices (MATLAB lines 290-304) ---
+    for icut in range(nncut):
+        ix1 = leftcut[icut] + 1
+        iy1 = topcut[icut] + 1
+        ix2 = rightcut[icut] + 1
+        iy2 = topcut[icut] + 1
+        ivx1 = imap_vx[ix1, iy1]
+        ivx2 = imap_vx[ix2, iy2]
+        if ivx1 != 0 and ivx2 != 0 and ivx1 != ivx2:
+            if crx[ix1, iy1, 0] == crx[ix2, iy2, 0] and cry[ix1, iy1, 0] == cry[ix2, iy2, 0]:
+                imap_vx[imap_vx == ivx2] = ivx1
+                cv_vx[cv_vx == ivx2] = ivx1
+                fc_vx[fc_vx == ivx2] = ivx1
+
+    grid.imap_vx = imap_vx
+
+    # --- Vertex linking arrays (vxFcP, vxCvP) ---
+    vx_fc_p = np.zeros((nVx, 2), dtype=np.int32)
+    vx_cv_p = np.zeros((nVx, 2), dtype=np.int32)
+
+    # Count faces/vertices per vertex (MATLAB: sum(sum(fcVx == ivx)))
+    fc_vx_flat = fc_vx.ravel()
+    cv_vx_flat = cv_vx.ravel()
+    fc_counts = np.bincount(fc_vx_flat[fc_vx_flat > 0], minlength=nVx + 1)[1:]
+    cv_counts = np.bincount(cv_vx_flat[cv_vx_flat > 0], minlength=nVx + 1)[1:]
+    vx_fc_p[:, 1] = fc_counts
+    vx_cv_p[:, 1] = cv_counts
+    starts_fc = np.zeros(nVx, dtype=np.int32)
+    starts_cv = np.zeros(nVx, dtype=np.int32)
+    starts_fc[1:] = np.cumsum(fc_counts)[:-1]
+    starts_cv[1:] = np.cumsum(cv_counts)[:-1]
+    vx_fc_p[:, 0] = starts_fc
+    vx_cv_p[:, 0] = starts_cv
+
+    n_vmx_fc = int(fc_counts.sum())
+    n_vmx_cv = int(cv_counts.sum())
+    vx_fc = np.zeros(n_vmx_fc, dtype=np.int32)
+    vx_cv = np.zeros(n_vmx_cv, dtype=np.int32)
+    fill_fc = np.zeros(nVx, dtype=np.int32)
+    fill_cv = np.zeros(nVx, dtype=np.int32)
+
+    # Build vxFc: for each vertex, faces containing it (ascending face order)
+    order_fc = np.argsort(fc_vx_flat, kind="stable")
+    # fc_vx_flat = tile of [fc0 vx0, fc0 vx1, fc1 vx0, ...]; need face index for each slot
+    fc_idx_flat = np.repeat(np.arange(1, nFc + 1), 2)
+    for pos in order_fc:
+        v = int(fc_vx_flat[pos])
+        if v > 0:
+            slot = int(vx_fc_p[v - 1, 0]) + fill_fc[v - 1]
+            vx_fc[slot] = fc_idx_flat[pos]
+            fill_fc[v - 1] += 1
+
+    # Build vxCv: for each vertex, cells containing it (ascending cell order)
+    order_cv = np.argsort(cv_vx_flat, kind="stable")
+    cv_idx_flat = np.repeat(np.arange(1, nCv + 1), 4)
+    for pos in order_cv:
+        v = int(cv_vx_flat[pos])
+        if v > 0:
+            slot = int(vx_cv_p[v - 1, 0]) + fill_cv[v - 1]
+            vx_cv[slot] = cv_idx_flat[pos]
+            fill_cv[v - 1] += 1
+
+    grid.vx_fc_p = vx_fc_p
+    grid.vx_fc = vx_fc
+    grid.vx_cv_p = vx_cv_p
+    grid.vx_cv = vx_cv
+
+    # --- Vertex coordinates (vxX, vxY) ---
+    vx_x = np.zeros(nVx, dtype=np.float64)
+    vx_y = np.zeros(nVx, dtype=np.float64)
+    for ix in range(1, nx + 2):
+        for iy in range(1, ny + 2):
+            ivx = imap_vx[ix, iy]
+            if ivx != 0:
+                vx_x[ivx - 1] = crx[ix, iy, 0]
+                vx_y[ivx - 1] = cry[ix, iy, 0]
+
+    grid.vx_x = vx_x
+    grid.vx_y = vx_y
 
     # --- Regions ---
     cv_reg = np.zeros(nCv, dtype=np.int32)
@@ -315,11 +486,104 @@ def _load_structured_grid(raw: dict[str, Any]) -> GridTopology:
     grid.cv_reg = cv_reg
     grid.fc_reg = fc_reg
 
-    # --- Face data ---
-    fc_cv = np.zeros((nFc, 2), dtype=np.int32)
-    fc_vx = np.zeros((nFc, 2), dtype=np.int32)
-    fc_x = np.zeros(nFc, dtype=np.float64)
-    fc_y = np.zeros(nFc, dtype=np.float64)
+    # --- Flux tubes (MATLAB lines 404-489) ---
+    ft_cv_p = np.zeros((nFt, 2), dtype=np.int32)
+    ft_fc_p = np.zeros((nFt, 2), dtype=np.int32)
+    fs_fc_p = np.zeros((nFs, 2), dtype=np.int32)
+    ft_cv = np.zeros(0, dtype=np.int32)
+    ft_fc = np.zeros(0, dtype=np.int32)
+    fs_fc = np.zeros(0, dtype=np.int32)
+    cv_ft = np.zeros(nCv, dtype=np.int32)
+
+    ift_cv = 0
+    ift_fc = 0
+    ift = 0
+    ifs_fc = 0
+    ifs = 0
+    ft_cv_list = []
+    ft_fc_list = []
+    fs_fc_list = []
+
+    for iy in range(ny + 2):
+        tube = np.arange(1, nx + 3)  # 1-based ix
+        left_edges = tube[left[:, iy] == -2]
+        n_left = len(left_edges)
+        for k in range(n_left):
+            if imap_cv[left_edges[k] - 1, iy] == 0:
+                left_edges[k] += 1
+        for ix_beg in range(n_left + 1):
+            if ix_beg < n_left:
+                ix = left_edges[ix_beg]
+            else:
+                ix = 1
+            # skip already-counted or empty cells
+            while imap_cv[ix - 1, iy] == 0 or (ft_cv_list and imap_cv[ix - 1, iy] in ft_cv_list):
+                ix += 1
+                if ix > nx + 2:
+                    break
+            if ix > nx + 2:
+                break
+            # new flux tube
+            ift += 1
+            ift_cv += 1
+            ift_fc += 1
+            ft_cv_p[ift - 1, 0] = ift_cv
+            ft_cv_p[ift - 1, 1] = 0
+            ft_fc_p[ift - 1, 0] = ift_fc
+            ft_fc_p[ift - 1, 1] = 0
+            if iy > 1:
+                ifs += 1
+                ifs_fc += 1
+                fs_fc_p[ifs - 1, 0] = ifs_fc
+                fs_fc_p[ifs - 1, 1] = 0
+            # walk along the row until the end of the flux tube
+            while imap_cv[ix - 1, iy] > 0:
+                while ix < nx + 1 and imap_cv[ix - 1, iy] == 0:
+                    ix += 1
+                if ft_cv_list and np.any(np.array(ft_cv_list) == imap_cv[ix - 1, iy]):
+                    break
+                ft_cv_list.append(imap_cv[ix - 1, iy])
+                cv_ft[imap_cv[ix - 1, iy] - 1] = ift
+                ft_cv_p[ift - 1, 1] += 1
+                ift_cv += 1
+                if left[ix - 1, iy] > -2 and imap_fcx[ix - 1, iy] != 0:
+                    ft_fc_list.append(imap_fcx[ix - 1, iy])
+                    ft_fc_p[ift - 1, 1] += 1
+                    ift_fc += 1
+                if iy > 1 and imap_fcy[ix - 1, iy] != 0:
+                    fs_fc_list.append(imap_fcy[ix - 1, iy])
+                    fs_fc_p[ifs - 1, 1] += 1
+                    ifs_fc += 1
+                if right[ix - 1, iy] == nx + 1:
+                    break
+                else:
+                    ix = right[ix - 1, iy] + 2
+            ift_cv -= 1
+            ift_fc -= 1
+            if iy > 1:
+                ifs_fc -= 1
+
+    ft_cv = np.array(ft_cv_list, dtype=np.int32)
+    ft_fc = np.array(ft_fc_list, dtype=np.int32)
+    fs_fc = np.array(fs_fc_list, dtype=np.int32)
+
+    grid.ft_cv_p = ft_cv_p
+    grid.ft_cv = ft_cv
+    grid.ft_fc_p = ft_fc_p
+    grid.ft_fc = ft_fc
+    grid.fs_fc_p = fs_fc_p
+    grid.fs_fc = fs_fc
+    grid.cv_ft = cv_ft
+
+    # --- Face labels (MATLAB lines 492-498) ---
+    fc_lbl = np.zeros(nFc, dtype=np.int32)
+    for icv in range(nCi, nCv):
+        fc_lbl[cv_fc[cv_fc_p[icv, 0]] - 1] = bnd_lbl[icv - nCi] - cv_reg[icv]
+    grid.fc_lbl = fc_lbl
+
+    # --- Face geometry (MATLAB lines 555-650) ---
+    fc_x = 0.5 * (vx_x[fc_vx[:, 0] - 1] + vx_x[fc_vx[:, 1] - 1])
+    fc_y = 0.5 * (vx_y[fc_vx[:, 0] - 1] + vx_y[fc_vx[:, 1] - 1])
     fc_s = np.zeros(nFc, dtype=np.float64)
     fc_hc = np.zeros((nFc, 2), dtype=np.float64)
     fc_ht = np.zeros(nFc, dtype=np.float64)
@@ -329,6 +593,83 @@ def _load_structured_grid(raw: dict[str, Any]) -> GridTopology:
     fc_qbet = np.zeros((nFc, 2), dtype=np.float64)
     fc_pbs = np.zeros(nFc, dtype=np.float64)
 
+    # wbbl: read from file if present, else interpolate from cvBb (vol method)
+    wbbl = raw.get("wbbl")
+    if wbbl is None:
+        wbbl = np.zeros((nx + 2, ny + 2, 4), dtype=np.float64)
+        for dim in range(4):
+            tmp = (cv_vol_arr[fc_cv[:, 0] - 1] * cv_bb[fc_cv[:, 1] - 1, dim] +
+                   cv_vol_arr[fc_cv[:, 1] - 1] * cv_bb[fc_cv[:, 0] - 1, dim]) / \
+                  (cv_vol_arr[fc_cv[:, 0] - 1] + cv_vol_arr[fc_cv[:, 1] - 1])
+            # tmp[fc] for every fc; store on x-faces via imapFcx
+            for iy in range(ny + 2):
+                for ix in range(nx + 2):
+                    fcx = imap_fcx[ix, iy]
+                    if fcx != 0:
+                        wbbl[ix, iy, dim] = tmp[fcx - 1]
+    else:
+        wbbl = _ensure_float(wbbl).reshape(nx + 2, ny + 2, 4, order="F")
+
+    for iy in range(ny + 2):
+        for ix in range(nx + 2):
+            fcx = imap_fcx[ix, iy]
+            if fcx != 0:
+                fc = fcx - 1
+                # Distance to neighbouring cell centers (approximation, as in b2us)
+                fc_hc[fc, 0] = 0.5 * hx[left[ix, iy] + 1, iy]
+                fc_hc[fc, 1] = 0.5 * hx[ix, iy]
+                # Face area (precise)
+                fc_s[fc] = gs[ix, iy, 0]
+                # Face length (precise)
+                dx = vx_x[fc_vx[fc, 0] - 1] - vx_x[fc_vx[fc, 1] - 1]
+                dy = vx_y[fc_vx[fc, 0] - 1] - vx_y[fc_vx[fc, 1] - 1]
+                fc_ht[fc] = np.sqrt(dx * dx + dy * dy)
+                fc_bb[fc, 0:4] = np.abs(wbbl[ix, iy, 0:4])
+                # Cosine of alpha exactly as in b2us
+                fc_qalf[fc, 0] = qc[ix, iy] * np.sign(wbbl[ix, iy, 0])
+                # Sine of alpha (sign conventions — see MATLAB comments)
+                term = ((crx[ix, iy, 1] + crx[ix, iy, 3]) - (crx[ix, iy, 0] + crx[ix, iy, 2])) * (crx[ix, iy, 2] - crx[ix, iy, 0]) + \
+                       ((cry[ix, iy, 1] + cry[ix, iy, 3]) - (cry[ix, iy, 0] + cry[ix, iy, 2])) * (cry[ix, iy, 2] - cry[ix, iy, 0])
+                fc_qalf[fc, 1] = -np.sqrt(1 - qc[ix, iy] ** 2) * np.sign(wbbl[ix, iy, 0]) * \
+                    np.sign(term) * np.sign(wbbl[ix, iy, 2])
+                # For poloidally aligned structured meshes gamma = alpha, beta = 0
+                fc_qgam[fc, 0] = qc[ix, iy]  # cos(gamma)
+                term_g = ((cry[ix, iy, 1] + cry[ix, iy, 3]) - (cry[ix, iy, 0] + cry[ix, iy, 2])) * (crx[ix, iy, 2] - crx[ix, iy, 0]) - \
+                         ((crx[ix, iy, 1] + crx[ix, iy, 3]) - (crx[ix, iy, 0] + crx[ix, iy, 2])) * (cry[ix, iy, 2] - cry[ix, iy, 0])
+                fc_qgam[fc, 1] = np.sqrt(1 - qc[ix, iy] ** 2) * np.sign(term_g)
+                fc_qbet[fc, 0] = fc_qgam[fc, 0] * fc_qalf[fc, 0] + fc_qgam[fc, 1] * fc_qalf[fc, 1]
+                fc_qbet[fc, 1] = (fc_qgam[fc, 1] * fc_qalf[fc, 0] + fc_qgam[fc, 0] * fc_qalf[fc, 1]) * np.sign(wbbl[ix, iy, 2])
+                fc_pbs[fc] = pbs[ix, iy, 0]
+
+            fcy = imap_fcy[ix, iy]
+            if fcy != 0:
+                fc = fcy - 1
+                fc_hc[fc, 0] = 0.5 * hy[ix, bottom[ix, iy] + 1]
+                fc_hc[fc, 1] = 0.5 * hy[ix, iy]
+                fc_s[fc] = gs[ix, iy, 1]
+                dx = vx_x[fc_vx[fc, 0] - 1] - vx_x[fc_vx[fc, 1] - 1]
+                dy = vx_y[fc_vx[fc, 0] - 1] - vx_y[fc_vx[fc, 1] - 1]
+                fc_ht[fc] = np.sqrt(dx * dx + dy * dy)
+                # Poloidal B: inverse-distance weighted average of neighbours
+                cv1 = fc_cv[fc, 0] - 1
+                cv2 = fc_cv[fc, 1] - 1
+                fc_bb[fc, 0] = abs(fc_hc[fc, 0] * cv_bb[cv2, 0] + fc_hc[fc, 1] * cv_bb[cv1, 0]) / (fc_hc[fc, 0] + fc_hc[fc, 1])
+                fc_bb[fc, 1] = 0.0
+                fc_bb[fc, 2] = abs(FFBZ) / (fc_s[fc] / fc_ht[fc])
+                fc_bb[fc, 3] = np.sqrt(fc_bb[fc, 0] ** 2 + fc_bb[fc, 1] ** 2 + fc_bb[fc, 2] ** 2)
+                # Cosine of alpha is exactly zero
+                fc_qalf[fc, 0] = 0.0
+                fc_qalf[fc, 1] = np.sign(wbbl[ix, iy, 0]) * np.sign(wbbl[ix, iy, 2])
+                # Gamma for y-faces
+                qc2 = (hy[ix, iy] * qz[ix, iy, 1] + hy[ix, bottom[ix, iy] + 1] * qz[ix, bottom[ix, iy] + 1, 1]) / \
+                      (hy[ix, iy] + hy[ix, bottom[ix, iy] + 1])
+                fc_qgam[fc, 0] = qc2  # cos(gamma)
+                fc_qgam[fc, 1] = np.sqrt(1 - qc2 ** 2) * \
+                    np.sign(hy[ix, iy] * qz[ix, iy, 0] + hy[ix, bottom[ix, iy] + 1] * qz[ix, bottom[ix, iy] + 1, 0])
+                fc_qbet[fc, 0] = fc_qgam[fc, 0] * fc_qalf[fc, 0] + fc_qgam[fc, 1] * fc_qalf[fc, 1]
+                fc_qbet[fc, 1] = (fc_qgam[fc, 1] * fc_qalf[fc, 0] + fc_qgam[fc, 0] * fc_qalf[fc, 1]) * np.sign(wbbl[ix, iy, 2])
+                fc_pbs[fc] = pbs[ix, iy, 1]
+
     grid.fc_cv = fc_cv
     grid.fc_vx = fc_vx
     grid.fc_x = fc_x
@@ -337,6 +678,57 @@ def _load_structured_grid(raw: dict[str, Any]) -> GridTopology:
     grid.fc_hc = fc_hc
     grid.fc_ht = fc_ht
     grid.fc_bb = fc_bb
+    grid.fc_qalf = fc_qalf
+    grid.fc_qgam = fc_qgam
+    grid.fc_qbet = fc_qbet
+    grid.fc_pbs = fc_pbs
+
+    # --- ftReg (MATLAB lines 685-698) ---
+    ft_reg = np.zeros(nFt, dtype=np.int32)
+    for i_ft in range(nFt):
+        start = int(ft_cv_p[i_ft, 0]) - 1
+        count = int(ft_cv_p[i_ft, 1])
+        if count == 0:
+            continue
+        cvs = ft_cv[start:start + count]
+        if len(cvs) == 0:
+            continue
+        c0 = cv_reg[cvs[0] - 1]
+        if c0 == 1 or c0 == 5:
+            ft_reg[i_ft] = 1
+        elif np.any(np.isin(cv_reg[cvs - 1], [2, 6])):
+            ft_reg[i_ft] = 2
+        else:
+            ft_reg[i_ft] = 3
+    grid.ft_reg = ft_reg
+
+    # --- Poloidal flux (cvFpsi, fcFpsi; MATLAB lines 700-725) ---
+    cv_fpsi = np.zeros(nCv, dtype=np.float64)
+    if fpsi_data is not None and np.any(fpsi_data != 0):
+        for iy in range(ny + 2):
+            for ix in range(nx + 2):
+                idx = imap_cv[ix, iy]
+                if idx != 0:
+                    cv_fpsi[idx - 1] = np.mean(fpsi_data[ix, iy, :])
+    else:
+        cv_fpsi = cv_ft.astype(np.float64)
+    fc_fpsi = np.zeros(nFc, dtype=np.float64)
+    for fc in range(nFc):
+        fc_fpsi[fc] = 0.5 * (cv_fpsi[fc_cv[fc, 0] - 1] + cv_fpsi[fc_cv[fc, 1] - 1])
+    grid.cv_fpsi = cv_fpsi
+    grid.fc_fpsi = fc_fpsi
+
+    # --- Convert connectivity arrays to 0-based (same convention as unstructured) ---
+    for name in ["fc_cv", "fc_vx", "cv_fc", "cv_vx", "ft_cv", "ft_fc", "fs_fc", "vx_fc", "vx_cv"]:
+        arr = getattr(grid, name, None)
+        if arr is not None and np.any(arr > 0):
+            arr = arr.copy()
+            arr[arr > 0] -= 1
+            setattr(grid, name, arr)
+    if grid.cv_ft is not None and np.any(grid.cv_ft > 0):
+        cv_ft_0b = grid.cv_ft.copy()
+        cv_ft_0b[cv_ft_0b > 0] -= 1
+        grid.cv_ft = cv_ft_0b
 
     return grid
 
