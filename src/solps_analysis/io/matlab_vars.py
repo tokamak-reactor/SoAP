@@ -258,6 +258,7 @@ _CELL_SPECIES_VARS: dict[str, tuple] = {
     "she_radlin": (["b2stel_rqrad"], 1.0),
     "sna_eir":  (["b2stbr_sna_eir"], 1.0),
     "smo_eir":  (["b2stbr_smo_eir"], 1.0),
+    "uap":      (["b2npmo_uap"], 1.0),
 }
 
 # Non-species face variables: base_names (fallback), dim, sign, divisor
@@ -341,6 +342,15 @@ _CELL_SCALAR_VARS: dict[str, tuple] = {
     "shi_st": (["b2srst_shist"], 1.0),
     "shi_cx": (["b2stcx_shi"], 1.0),
     "shi_eir": (["b2stbr_shi_eir"], 1.0),
+    "te_inp": (["b2nph9_te_inp", "b2npht_te_inp"], 1.0),
+    "ti_inp": (["b2nph9_ti_inp", "b2npht_ti_inp"], 1.0),
+    "reshe": (["b2nph9_reshe", "b2npht_reshe"], 1.0),
+    "reshi": (["b2nph9_reshi", "b2npht_reshi"], 1.0),
+    "resht": (["b2nph9_resht", "b2npht_resht"], 1.0),
+    "respo": (["b2npp7_respo", "b2nppo_respo"], 1.0),
+    "sch":   (["b2npp7_sch", "b2nppo_sch"], 1.0),
+    "shi_ion": (["b2stel_shi_ion"], 1.0),
+    "shi_rec": (["b2stel_shi_rec"], 1.0),
 }
 
 
