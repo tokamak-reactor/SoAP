@@ -2270,6 +2270,290 @@ def calc_Qrad_tot_sum(watch=None, grid=None, comp=None, **kw):
         q = calc_Qrad(watch=watch, grid=grid, comp=comp)
     return np.array([q.sum()])
 
+
+# ──────────────────────────────────────────────────────────────
+# Radial-column sums (lines 862-925)
+# ──────────────────────────────────────────────────────────────
+
+def _column_sums(watch, grid, comp) -> dict:
+    """Sum sources along radial columns crossing the OMP.
+
+    Port of calc_additional.m lines 862-925.
+    """
+    cached = getattr(watch, "_column_sums", None)
+    if cached is not None:
+        return cached
+
+    ws = _ws(watch)
+    watch.compute_regions()
+    omp = grid.outer_midplane_cells
+    if omp is None or len(omp) < 2:
+        watch._column_sums = {}
+        return {}
+
+    len_cs = len(omp)
+    ns = ws["fna_mdf_r"].shape[1]
+    nsorts = comp.n_elements if comp is not None else 1
+
+    Sna = np.zeros((len_cs, ns))
+    div_Fna_mdf = np.zeros((len_cs, ns))
+    Snas = np.zeros((len_cs, nsorts))
+    Qrads = np.zeros((len_cs, nsorts))
+    ftVol = np.zeros(len_cs)
+    te_mean = np.zeros(len_cs)
+
+    qrad = ws.get("Qrad")
+    if qrad is None:
+        qrad = calc_Qrad(watch=watch, grid=grid, comp=comp)
+    snas = ws.get("snas")
+    if snas is None:
+        snas = calc_snas(watch=watch, grid=grid, comp=comp)
+    div_fna_mdf = ws.get("div_fna_mdf")
+    if div_fna_mdf is None:
+        div_fna_mdf = calc_div_fna_mdf(watch=watch, grid=grid)
+    eirene_flag = getattr(watch, "neut", None) is not None
+    sna_src = ws["sna_eir"] if eirene_flag and "sna_eir" in ws else ws.get("sna")
+
+    cv_reg = grid.cv_reg
+    cv_vol = grid.cv_vol
+    te = ws["te"]
+    imap_fcy = grid.imap_fcy
+    imap_fcx = grid.imap_fcx
+    fc_cv = grid.fc_cv
+    n_ci = grid.n_core_cells
+    wall_mask = grid.fc_lbl != 0 if grid.fc_lbl is not None else np.zeros(grid.n_faces, dtype=bool)
+
+    r_index = 0
+    if imap_fcy is None:
+        watch._column_sums = {}
+        return {}
+
+    n_cols = imap_fcy.shape[1]
+    for col in range(n_cols):
+        col_fcy = imap_fcy[:, col]
+        col_fcy = col_fcy[col_fcy != 0]
+        if col_fcy.size == 0:
+            continue
+        cvs_to_fcy = fc_cv[col_fcy - 1]  # 0-based
+        if not np.intersect1d(omp, cvs_to_fcy.ravel()).size:
+            continue
+
+        # drop faces whose cells are in regions 3/8/7/4 (PFR/private flux)
+        keep = np.ones(len(col_fcy), dtype=bool)
+        for k in range(len(col_fcy)):
+            if np.any(np.isin(cv_reg[fc_cv[col_fcy[k] - 1]], [3, 8, 7, 4])):
+                keep[k] = False
+        col_fcy = col_fcy[keep]
+        cvs_to_fcy = fc_cv[col_fcy - 1]
+        # remove wall faces
+        wall_keep = ~wall_mask[col_fcy - 1]
+        col_fcy = col_fcy[wall_keep]
+        cvs_to_fcy = cvs_to_fcy[wall_keep]
+
+        cvs = np.unique(cvs_to_fcy.ravel())
+        if cvs.size == 0:
+            continue
+
+        for is_ in range(ns):
+            Sna[r_index, is_] = sna_src[cvs, is_].sum() if sna_src is not None else 0.0
+            div_Fna_mdf[r_index, is_] = div_fna_mdf[cvs, is_].sum()
+        for ia in range(nsorts):
+            Snas[r_index, ia] = snas[cvs, ia].sum() if snas.ndim == 2 and snas.shape[1] > ia else 0.0
+            Qrads[r_index, ia] = qrad[cvs, ia].sum() if qrad.ndim == 2 and qrad.shape[1] > ia else 0.0
+        ftVol[r_index] = cv_vol[cvs].sum()
+        if ftVol[r_index] > 0:
+            te_mean[r_index] = (te[cvs] * cv_vol[cvs]).sum() / ftVol[r_index]
+
+        r_index += 1
+
+    out = {
+        "Sna": Sna[:r_index], "div_Fna_mdf": div_Fna_mdf[:r_index],
+        "Snas": Snas[:r_index], "Qrads": Qrads[:r_index],
+        "ftVol": ftVol[:r_index], "te_mean": te_mean[:r_index],
+    }
+    watch._column_sums = out
+    return out
+
+
+@quantity(
+    name="Sna",
+    requires=[],
+    description="radial-column integrated neutral source per species",
+    unit="s⁻¹",
+)
+def calc_Sna(watch=None, grid=None, comp=None, **kw):
+    return _column_sums(watch, grid, comp).get("Sna", np.zeros(0))
+
+
+@quantity(
+    name="Snas",
+    requires=[],
+    description="radial-column integrated neutral source per element",
+    unit="s⁻¹",
+)
+def calc_Snas(watch=None, grid=None, comp=None, **kw):
+    return _column_sums(watch, grid, comp).get("Snas", np.zeros(0))
+
+
+@quantity(
+    name="Qrads",
+    requires=[],
+    description="radial-column integrated radiation per element",
+    unit="W",
+)
+def calc_Qrads(watch=None, grid=None, comp=None, **kw):
+    return _column_sums(watch, grid, comp).get("Qrads", np.zeros(0))
+
+
+@quantity(
+    name="te_mean",
+    requires=[],
+    description="volume-averaged Te along radial column",
+    unit="eV",
+)
+def calc_te_mean(watch=None, grid=None, comp=None, **kw):
+    return _column_sums(watch, grid, comp).get("te_mean", np.zeros(0))
+
+
+# ──────────────────────────────────────────────────────────────
+# fh_htpl / fhp / fh_pls (lines 927-945)
+# ──────────────────────────────────────────────────────────────
+
+@quantity(
+    name="fh_htpl_th",
+    requires=[],
+    description="heat flux to plates, poloidal",
+    unit="W",
+    location="face",
+)
+def calc_fh_htpl_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    tef = ws["tef"] if "tef" in ws else intface(grid, ws["te"], 1, _intface_method(grid))
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    uaf = intface(grid, ws["ua"], 1, _intface_method(grid))
+    zs = _zs(comp)
+    ams = None
+    if comp is not None:
+        am = getattr(comp, "am", None)
+        if am is not None:
+            ams = np.asarray(am, dtype=np.float64)
+    fne_th = ws.get("fne_th")
+    if fne_th is None:
+        fne_th = calc_fne_th(watch=watch, grid=grid, comp=comp)
+    out = ws["fhe_th"] + ws["fhi_th"] + fne_th * tef * QE
+    if zs is not None and ams is not None:
+        for is_ in range(len(zs)):
+            if zs[is_] == 0:
+                continue
+            out = out + ws["fna_th"][:, is_] * (tif * QE + ams[is_] * MP * uaf[:, is_] ** 2 / 2)
+    return out
+
+
+@quantity(
+    name="fh_htpl_r",
+    requires=[],
+    description="heat flux to plates, radial",
+    unit="W",
+    location="face",
+)
+def calc_fh_htpl_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    tef = ws["tef"] if "tef" in ws else intface(grid, ws["te"], 1, _intface_method(grid))
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    uaf = intface(grid, ws["ua"], 1, _intface_method(grid))
+    zs = _zs(comp)
+    ams = None
+    if comp is not None:
+        am = getattr(comp, "am", None)
+        if am is not None:
+            ams = np.asarray(am, dtype=np.float64)
+    fne_r = ws.get("fne_r")
+    if fne_r is None:
+        fne_r = calc_fne_r(watch=watch, grid=grid, comp=comp)
+    out = ws["fhe_r"] + ws["fhi_r"] + fne_r * tef * QE
+    if zs is not None and ams is not None:
+        for is_ in range(len(zs)):
+            if zs[is_] == 0:
+                continue
+            out = out + ws["fna_r"][:, is_] * (tif * QE + ams[is_] * MP * uaf[:, is_] ** 2 / 2)
+    return out
+
+
+def _fhp(watch, grid, comp, direction: str) -> np.ndarray:
+    """Ionization-potential energy flux (calc_fhp simple method)."""
+    ws = _ws(watch)
+    if comp is None:
+        return np.zeros(grid.n_faces)
+    from solps_analysis.construct.builtin.energy_balance import _E_pot_ion
+    rpt = _E_pot_ion(watch, comp)  # (ns,) cumulative potentials
+    # rpt_face = intface(rpt per species, halfsum)
+    ns = len(rpt)
+    rpt_face = np.zeros((grid.n_faces, ns))
+    for is_ in range(ns):
+        rpt_face[:, is_] = intface(grid, np.full(grid.n_cells, rpt[is_]), 1, "halfsum")
+    fna = ws["fna_r"] if direction == "r" else ws["fna_th"]
+    return fna * rpt_face * QE
+
+
+@quantity(
+    name="fhp_th",
+    requires=[],
+    description="ionization-potential energy flux, poloidal",
+    unit="W",
+    location="face",
+)
+def calc_fhp_th(watch=None, grid=None, comp=None, **kw):
+    return _fhp(watch, grid, comp, "th")
+
+
+@quantity(
+    name="fhp_r",
+    requires=[],
+    description="ionization-potential energy flux, radial",
+    unit="W",
+    location="face",
+)
+def calc_fhp_r(watch=None, grid=None, comp=None, **kw):
+    return _fhp(watch, grid, comp, "r")
+
+
+@quantity(
+    name="fh_pls_th",
+    requires=[],
+    description="total heat flux to plasma-facing surface, poloidal",
+    unit="W",
+    location="face",
+)
+def calc_fh_pls_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    htpl = ws.get("fh_htpl_th")
+    if htpl is None:
+        htpl = calc_fh_htpl_th(watch=watch, grid=grid, comp=comp)
+    fhp = ws.get("fhp_th")
+    if fhp is None:
+        fhp = calc_fhp_th(watch=watch, grid=grid, comp=comp)
+    fh_nutpr = ws.get("fh_nutpr_th", np.zeros(grid.n_faces))
+    return htpl + fh_nutpr + fhp.sum(axis=1) if fhp.ndim == 2 else htpl + fh_nutpr + fhp
+
+
+@quantity(
+    name="fh_pls_r",
+    requires=[],
+    description="total heat flux to plasma-facing surface, radial",
+    unit="W",
+    location="face",
+)
+def calc_fh_pls_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    htpl = ws.get("fh_htpl_r")
+    if htpl is None:
+        htpl = calc_fh_htpl_r(watch=watch, grid=grid, comp=comp)
+    fhp = ws.get("fhp_r")
+    if fhp is None:
+        fhp = calc_fhp_r(watch=watch, grid=grid, comp=comp)
+    fh_nutpr = ws.get("fh_nutpr_r", np.zeros(grid.n_faces))
+    return htpl + fh_nutpr + fhp.sum(axis=1) if fhp.ndim == 2 else htpl + fh_nutpr + fhp
+
 @quantity(
     name="smo_vis_tot",
     requires=[],
