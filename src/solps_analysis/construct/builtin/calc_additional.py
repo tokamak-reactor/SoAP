@@ -2554,6 +2554,276 @@ def calc_fh_pls_r(watch=None, grid=None, comp=None, **kw):
     fh_nutpr = ws.get("fh_nutpr_r", np.zeros(grid.n_faces))
     return htpl + fh_nutpr + fhp.sum(axis=1) if fhp.ndim == 2 else htpl + fh_nutpr + fhp
 
+
+# ──────────────────────────────────────────────────────────────
+# Wall heat loads, saturation currents, floating potential
+# (lines 947-1113)
+# ──────────────────────────────────────────────────────────────
+
+ME = 9.1093837015e-31  # electron mass, kg
+
+
+def _wall_quantities(watch, grid, comp) -> dict:
+    """Compute wall heat/current loads and saturation currents.
+
+    Port of calc_additional.m lines 947-1113 (sputtering skipped —
+    compute_sputtering defaults to false).
+    """
+    cached = getattr(watch, "_wall_quantities", None)
+    if cached is not None:
+        return cached
+
+    ws = _ws(watch)
+    n_fc = grid.n_faces
+    from solps_analysis.core.operators import diff_p_us, diff_r_us
+
+    # fhi_th/r fallback (lines 963-968)
+    fhi_th = ws["fhi_th"]
+    fhi_r = ws["fhi_r"]
+    if np.abs(fhi_th).sum() == 0:
+        fhi_th = ws["fhi_mdf_th"] - ws["fhi_dia_mdf_th"] + ws.get("fhi_nuBgradB_th", 0)
+    if np.abs(fhi_r).sum() == 0:
+        fhi_r = ws["fhi_mdf_r"] - ws["fhi_dia_mdf_r"] + ws.get("fhi_nuBgradB_r", 0)
+
+    # heat flux components (lines 971-977)
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    tef = ws["tef"] if "tef" in ws else intface(grid, ws["te"], 1, _intface_method(grid))
+    zs = _zs(comp)
+    ions = np.where(zs is not None and np.asarray(zs) != 0)[0] if zs is not None else np.arange(ws["na"].shape[1])
+    fna53_th = ws["fna_nuExB_th"] + ws["fna_nupar_th"]
+    fna53_r = ws["fna_nuExB_r"]
+    fne_curr_th = ws.get("fne_curr_th")
+    if fne_curr_th is None:
+        fne_curr_th = calc_fne_curr_th(watch=watch, grid=grid, comp=comp)
+    fne_curr_r = ws.get("fne_curr_r")
+    if fne_curr_r is None:
+        fne_curr_r = calc_fne_curr_r(watch=watch, grid=grid, comp=comp)
+    fne53_th = (ws["fna_nuExB_th"] * zs[None, :]).sum(axis=1) \
+        - (ws.get("fna_curr_th", np.zeros_like(fna53_th)) * zs[None, :]).sum(axis=1) \
+        + (ws["fna_nupar_th"] * zs[None, :]).sum(axis=1) - ws["fch_par_th"] / QE \
+        if zs is not None else np.zeros(n_fc)
+    fne53_r = (ws["fna_nuExB_r"] * zs[None, :]).sum(axis=1) \
+        - (ws.get("fna_curr_r", np.zeros_like(fna53_r)) * zs[None, :]).sum(axis=1) \
+        if zs is not None else np.zeros(n_fc)
+
+    fh_heat_th = fhi_th + ws["fhe_th"] + fna53_th[:, ions].sum(axis=1) * tif * QE \
+        + fne53_th * tef * QE
+    fh_heat_r = fhi_r + ws["fhe_r"] + fna53_r[:, ions].sum(axis=1) * tif * QE \
+        + fne53_r * tef * QE
+
+    # kinetic & viscous heat flux (lines 982-1005)
+    fh_kinrgy_th = np.zeros(n_fc)
+    fh_kinrgy_r = np.zeros(n_fc)
+    fh_vis_th = np.zeros(n_fc)
+    fh_vis_r = np.zeros(n_fc)
+    uaf = intface(grid, ws["ua"], 1, _intface_method(grid))
+    fc_cv = grid.fc_cv
+    cetaa_cl_th = ws.get("cetaa_clLucFlim_th")
+    cetaa_AN_th = ws.get("cetaa_AN_th")
+    cetaa_AN_r = ws.get("cetaa_AN_r")
+    if cetaa_cl_th is None:
+        cetaa_cl_th = np.zeros(n_fc)
+    if cetaa_AN_th is None:
+        cetaa_AN_th = np.zeros((n_fc, ws["na"].shape[1]))
+    if cetaa_AN_r is None:
+        cetaa_AN_r = np.zeros((n_fc, ws["na"].shape[1]))
+    ams = None
+    if comp is not None:
+        am = getattr(comp, "am", None)
+        if am is not None:
+            ams = np.asarray(am, dtype=np.float64)
+
+    if ams is not None and zs is not None:
+        for is_ in range(len(zs)):
+            if zs[is_] == 0:
+                continue
+            ua2 = ws["ua"][:, is_] ** 2 / 2
+            # ua2m = 0.5*sum(ua2 over fcCv) — average of the two cells
+            ua2m = 0.5 * (ua2[fc_cv[:, 0]] + ua2[fc_cv[:, 1]])
+            diff_ua2_th = diff_p_us(grid, 0, ua2)
+            diff_ua2_r = diff_r_us(grid, 0, ua2)
+            fh_kinrgy_th = fh_kinrgy_th + ws["fna_th"][:, is_] * ua2m * MP * ams[is_]
+            fh_kinrgy_r = fh_kinrgy_r + ws["fna_r"][:, is_] * ua2m * MP * ams[is_]
+            fh_vis_th = fh_vis_th - (4.0/3.0 * cetaa_cl_th + cetaa_AN_th[:, is_]) * diff_ua2_th
+            fh_vis_r = fh_vis_r - (4.0/3.0 * 0 + cetaa_AN_r[:, is_]) * diff_ua2_r
+
+    # sum of components (lines 1006-1015)
+    fhp_sum_th = ws["fhp_th"][:, ions].sum(axis=1) if "fhp_th" in ws else np.zeros(n_fc)
+    fhp_sum_r = ws["fhp_r"][:, ions].sum(axis=1) if "fhp_r" in ws else np.zeros(n_fc)
+    fh_joule_th = ws.get("fh_joule_th")
+    fh_joule_r = ws.get("fh_joule_r")
+    if fh_joule_th is None or fh_joule_r is None:
+        fh_joule_th = calc_fh_joule_th(watch=watch, grid=grid)
+        fh_joule_r = calc_fh_joule_r(watch=watch, grid=grid)
+    fh_nutpr_th = ws.get("fh_nutpr_th", np.zeros(n_fc))
+    fh_neut_tot_th = ws.get("fh_neut_tot_th", np.zeros(n_fc))
+    fh_rad_th = ws.get("fh_rad_th", np.zeros(n_fc))
+
+    fh_sum_th = fh_heat_th + fh_kinrgy_th + fh_vis_th + fhp_sum_th + fh_joule_th \
+        + fh_nutpr_th + fh_neut_tot_th + fh_rad_th
+    fh_sum_r = fh_heat_r + fh_kinrgy_r + fh_vis_r + fhp_sum_r + fh_joule_r
+
+    # boundary loads (lines 1017-1043)
+    fc_s = grid.fc_s if grid.fc_s is not None else np.ones(n_fc)
+    fc_or = grid.fc_or
+    fcs_boundary = _fcs_boundary(grid)
+    n_b = len(fcs_boundary)
+
+    fh_boundary = np.zeros(n_fc)
+    fch_boundary = np.zeros(n_fc)
+    fna_wall = np.zeros((n_fc, ws["na"].shape[1]))
+    jsat_perp = np.zeros(n_fc)
+    jsat_perp_j = np.zeros(n_fc)
+    jsat_par_exp = np.zeros(n_fc)
+    jsat_par_exp_j = np.zeros(n_fc)
+    jsat_par_phys = np.zeros(n_fc)
+    po_fl_wall = np.zeros(grid.n_cells)
+
+    ns = ws["na"].shape[1]
+    for k in range(n_b):
+        fcs = fcs_boundary[k]
+        cvs = _cvs_boundary(grid)[k][1]
+        if fcs.size == 0:
+            continue
+        fh_boundary[fcs] = (fh_sum_th[fcs] + fh_sum_r[fcs]) / fc_s[fcs] * fc_or[fcs]
+        fch_boundary[fcs] = (ws["fch_th"][fcs] + ws["fch_r"][fcs]) / fc_s[fcs] * fc_or[fcs]
+        fna_wall[fcs, :] = (ws["fna_mdf_r"][fcs, :] + ws["fna_mdf_th"][fcs, :]) / fc_s[fcs, None] * fc_or[fcs, None]
+
+        for is_ in range(ns):
+            jsat_perp[fcs] = jsat_perp[fcs] + fc_or[fcs] * (
+                ws["fna_mdf_th"][fcs, is_] + ws["fna_mdf_r"][fcs, is_]
+                - ws["fna_dia_mdf_th"][fcs, is_] - ws["fna_dia_mdf_r"][fcs, is_]
+            ) * zs[is_] / fc_s[fcs] * QE
+            jsat_par_phys[fcs] = jsat_par_phys[fcs] + (ws["na"][cvs, is_] * ws["ua"][cvs, is_]
+                                                        * zs[is_] * QE).sum(axis=0) * np.sign(jsat_perp[fcs])
+        fc_qalf = grid.fc_qalf if grid.fc_qalf is not None else np.zeros((n_fc, 2))
+        fc_bb = grid.fc_bb if grid.fc_bb is not None else np.ones((n_fc, 4))
+        jsat_par_phys[fcs] = jsat_par_phys[fcs] * fc_or[fcs] * np.sign(fc_qalf[fcs, 0])
+
+        if fc_bb[fcs[0], 0] != 0 and fc_qalf[fcs[0], 0] != 0:
+            jsat_cos = np.abs(fc_qalf[fcs, 0] * fc_bb[fcs, 0] / fc_bb[fcs, 3])
+            qalfmin = _b2mn_param(watch, "b2stbc_Qalfmin", 0.0)
+            if qalfmin > 0:
+                jsat_cos[jsat_cos < qalfmin] = qalfmin
+            jsat_par_exp[fcs] = jsat_perp[fcs] / jsat_cos
+            jsat_perp_j[fcs] = (fch_boundary[fcs]
+                                + np.sqrt((ws["te"][cvs] * QE) / (2 * np.pi * ME))
+                                * np.exp(-ws["po"][cvs] / ws["te"][cvs])
+                                * ws["ne"][cvs] * QE * jsat_cos).sum(axis=0) if cvs.size else 0
+            jsat_par_exp_j[fcs] = jsat_perp_j[fcs] / jsat_cos
+
+        # floating potential (lines 1048-1051)
+        if cvs.size:
+            Gamma_e_par = ws["ne"][cvs] * np.sqrt((ws["te"][cvs] * QE) / (2 * np.pi * ME))
+            Gamma_i_par = jsat_par_exp[fcs] / QE
+            # per-face: use first cell of the boundary (MATLAB uses cvs vector)
+            for j, fc in enumerate(fcs):
+                cv = cvs[j % len(cvs)]
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    po_fl_wall[cv] = ws["po"][cv] - ws["te"][cv] * np.log(
+                        Gamma_e_par[j % len(cvs)] / Gamma_i_par[j])
+
+    out = {
+        "fh_heat_th": fh_heat_th, "fh_heat_r": fh_heat_r,
+        "fh_kinrgy_th": fh_kinrgy_th, "fh_kinrgy_r": fh_kinrgy_r,
+        "fh_vis_th": fh_vis_th, "fh_vis_r": fh_vis_r,
+        "fh_sum_th": fh_sum_th, "fh_sum_r": fh_sum_r, "fh_sum": fh_sum_th + fh_sum_r,
+        "fh_boundary": fh_boundary, "fch_boundary": fch_boundary,
+        "fna_wall": fna_wall,
+        "jsat_perp": jsat_perp, "jsat_perp_j": jsat_perp_j,
+        "jsat_par_exp": jsat_par_exp, "jsat_par_exp_j": jsat_par_exp_j,
+        "jsat_par_phys": jsat_par_phys, "po_fl_wall": po_fl_wall,
+    }
+    watch._wall_quantities = out
+    return out
+
+
+def _fcs_boundary(grid) -> list:
+    """Boundary faces per label (face counterparts of cvs_boundary)."""
+    cached = getattr(grid, "_fcs_boundary_cache", None)
+    if cached is not None:
+        return cached
+    out = []
+    if grid.fc_lbl is not None and grid.fc_cv is not None:
+        n_ci = grid.n_core_cells
+        for lbl in np.unique(grid.fc_lbl[grid.fc_lbl != 0]):
+            mask = grid.fc_lbl == lbl
+            fcs = np.where(mask)[0]
+            # keep only faces adjacent to guard cells (boundary faces)
+            guard = (grid.fc_cv[fcs] >= n_ci).any(axis=1)
+            out.append(fcs[guard])
+    grid._fcs_boundary_cache = out
+    return out
+
+
+def _wall_get(watch, grid, comp, name: str) -> np.ndarray:
+    return _wall_quantities(watch, grid, comp).get(name, np.zeros(0))
+
+
+@quantity(
+    name="fh_boundary",
+    requires=[],
+    description="total heat flux to wall boundary",
+    unit="W/m²",
+    location="face",
+)
+def calc_fh_boundary(watch=None, grid=None, comp=None, **kw):
+    return _wall_get(watch, grid, comp, "fh_boundary")
+
+
+@quantity(
+    name="fch_boundary",
+    requires=[],
+    description="current density to wall boundary",
+    unit="A/m²",
+    location="face",
+)
+def calc_fch_boundary(watch=None, grid=None, comp=None, **kw):
+    return _wall_get(watch, grid, comp, "fch_boundary")
+
+
+@quantity(
+    name="jsat_perp",
+    requires=[],
+    description="perpendicular saturation current density",
+    unit="A/m²",
+    location="face",
+)
+def calc_jsat_perp(watch=None, grid=None, comp=None, **kw):
+    return _wall_get(watch, grid, comp, "jsat_perp")
+
+
+@quantity(
+    name="jsat_par_exp",
+    requires=[],
+    description="parallel saturation current (experimental)",
+    unit="A/m²",
+    location="face",
+)
+def calc_jsat_par_exp(watch=None, grid=None, comp=None, **kw):
+    return _wall_get(watch, grid, comp, "jsat_par_exp")
+
+
+@quantity(
+    name="po_fl_wall",
+    requires=[],
+    description="floating potential at boundary cells",
+    unit="V",
+)
+def calc_po_fl_wall(watch=None, grid=None, comp=None, **kw):
+    return _wall_get(watch, grid, comp, "po_fl_wall")
+
+
+@quantity(
+    name="fh_sum",
+    requires=[],
+    description="total heat flux to wall (sum of components)",
+    unit="W/m²",
+    location="face",
+)
+def calc_fh_sum(watch=None, grid=None, comp=None, **kw):
+    return _wall_get(watch, grid, comp, "fh_sum")
+
 @quantity(
     name="smo_vis_tot",
     requires=[],

@@ -143,7 +143,6 @@ class GridTopology:
     separatrix_cells: np.ndarray | None = None
     core_sep_faces: np.ndarray | None = None
     cv_or: np.ndarray | None = None    # (n_cells,) orientation
-    fc_or: np.ndarray | None = None    # (n_faces,) orientation
     bp_dir: int = 0  # poloidal B direction (±1)
     bt_dir: int = 0  # toroidal B direction (±1)
     wall_faces: np.ndarray | None = None
@@ -217,6 +216,37 @@ class GridTopology:
             return float(f"{int(parts[0])}.{int(parts[1]):03d}"[:6]) if len(parts) >= 2 else float(parts[0])
         except (IndexError, ValueError):
             return 0.0
+
+    @property
+    def fc_or(self) -> np.ndarray:
+        """Face orientation: +1 plasma→wall, -1 wall→plasma (MATLAB fcOr).
+
+        Built lazily from guard-cell connectivity (read_geometry.m lines
+        804-815): for each guard cell, its first face has fcOr=+1 when the
+        face connects core→guard, else -1.
+        """
+        cached = getattr(self, "_fc_or_cache", None)
+        if cached is not None:
+            return cached
+        n_fc = self.n_faces
+        out = np.zeros(n_fc)
+        if self.cv_fc_p is not None and self.cv_fc is not None and self.fc_cv is not None:
+            n_ci = self.n_core_cells
+            for i_cv in range(n_ci, self.n_cells):
+                i_fc = self.cv_fc[self.cv_fc_p[i_cv, 0]]
+                cvs = self.fc_cv[i_fc]
+                if cvs[1] > n_ci and cvs[0] <= n_ci:
+                    out[i_fc] = 1.0
+                else:
+                    out[i_fc] = -1.0
+        self._fc_or_cache = out
+        return out
+
+    @property
+    def fc_s_or(self) -> np.ndarray:
+        """fcS * fcOr (MATLAB fcSOr)."""
+        fc_s = self.fc_s if self.fc_s is not None else np.ones(self.n_faces)
+        return fc_s * self.fc_or
 
     def cell_radial_neighbors(self, cell_index: int) -> list[int]:
         """Get radial neighbor indices for a given cell.

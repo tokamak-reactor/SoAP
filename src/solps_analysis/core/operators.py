@@ -351,3 +351,71 @@ def gradc_p_us(grid: GridTopology, mode: int, fun: np.ndarray,
     """Poloidal gradient at cell centers: face gradient + intcell (intcellP)."""
     gface = grad_p_us(grid, mode, fun, funv)
     return intcell_us(grid, grid.intcell_p, gface)
+
+
+# ──────────────────────────────────────────────────────────────
+# diff_p_us / diff_r_us — plain (non-normalized) face gradients
+# ──────────────────────────────────────────────────────────────
+
+def _diff_face(grid: GridTopology, fun: np.ndarray, funv: np.ndarray,
+               poloidal: bool) -> np.ndarray:
+    """diff_p_us / diff_r_us: gradient at faces without metric division.
+
+    MATLAB Calc_WD/diff_p_us.m, diff_r_us.m:
+      diff_p: (fun[cv2]-fun[cv1])*fcQalf(:,1) +
+              (funv[vx2]-funv[vx1])*fcQbet(:,2)*(fcHc1+fcHc2)/fcHt
+      diff_r: (fun[cv2]-fun[cv1])*fcQalf(:,2) +
+              (funv[vx2]-funv[vx1])*fcQbet(:,1)*(fcHc1+fcHc2)/fcHt
+    """
+    n_fc = grid.n_faces
+    gfun = np.zeros(n_fc, dtype=np.float64)
+
+    if grid.fc_cv is None or grid.fc_vx is None or grid.fc_qalf is None \
+            or grid.fc_qbet is None or grid.fc_hc is None or grid.fc_ht is None:
+        raise ValueError("_diff_face: face geometry not available")
+
+    cv1 = grid.fc_cv[:, 0]
+    cv2 = grid.fc_cv[:, 1]
+    vx1 = grid.fc_vx[:, 0]
+    vx2 = grid.fc_vx[:, 1]
+    qalf = grid.fc_qalf
+    qbet = grid.fc_qbet
+    hc_sum = grid.fc_hc[:, 0] + grid.fc_hc[:, 1]
+    ht = grid.fc_ht
+
+    if poloidal:
+        a = qalf[:, 0]
+        b = qbet[:, 1]
+    else:
+        a = qalf[:, 1]
+        b = qbet[:, 0]
+
+    d_cv = fun[cv2] - fun[cv1]
+    d_vx = funv[vx2] - funv[vx1]
+    ok = ht > 0
+    gfun = np.where(ok, d_cv * a + d_vx * b * hc_sum / ht, 0.0)
+    return gfun
+
+
+def diff_p_us(grid: GridTopology, mode: int, fun: np.ndarray,
+              funv: np.ndarray | None = None) -> np.ndarray:
+    """Poloidal difference at faces (not normalized by metric)."""
+    fun = np.asarray(fun, dtype=np.float64)
+    if mode == 0:
+        vx_vol = calc_vxVol(grid, 0)
+        funv = intvertex_us(grid, fun, vx_vol)
+    if funv is None:
+        raise ValueError("diff_p_us: funv required for mode 1")
+    return _diff_face(grid, fun, np.asarray(funv, dtype=np.float64), poloidal=True)
+
+
+def diff_r_us(grid: GridTopology, mode: int, fun: np.ndarray,
+              funv: np.ndarray | None = None) -> np.ndarray:
+    """Radial difference at faces (not normalized by metric)."""
+    fun = np.asarray(fun, dtype=np.float64)
+    if mode == 0:
+        vx_vol = calc_vxVol(grid, 0)
+        funv = intvertex_us(grid, fun, vx_vol)
+    if funv is None:
+        raise ValueError("diff_r_us: funv required for mode 1")
+    return _diff_face(grid, fun, np.asarray(funv, dtype=np.float64), poloidal=False)
