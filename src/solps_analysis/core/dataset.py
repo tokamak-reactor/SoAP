@@ -313,6 +313,7 @@ class SolpsWatch:
         if self.neut is None and (self.path / "fort.44").exists():
             try:
                 self._load_eirene_data()
+                self._load_numerical_data()
             except Exception:
                 pass
         if self.eirene_comp is None and self.neut is not None:

@@ -3219,6 +3219,344 @@ def calc_Enrich_div_sep(watch=None, grid=None, comp=None, **kw):
 def calc_N_tot_B25(watch=None, grid=None, comp=None, **kw):
     return _sep_get(watch, grid, comp, "N_tot_B25")
 
+
+# ──────────────────────────────────────────────────────────────
+# Gas puff / fueling / seeding (lines 1343-1410)
+# ──────────────────────────────────────────────────────────────
+
+@quantity(
+    name="Gas_puff",
+    requires=[],
+    description="gas puff rate per element",
+    unit="s⁻¹",
+)
+def calc_Gas_puff(watch=None, grid=None, comp=None, **kw):
+    if comp is None:
+        return np.zeros(1)
+    nsorts = comp.n_elements
+    gas = np.zeros(nsorts)
+    run_log = getattr(watch, "run_log", None)
+    if run_log is not None and getattr(watch, "neut", None) is not None:
+        gp = run_log.get("gas_puff", {})
+        for ia in range(nsorts):
+            gas[ia] = float(gp.get(ia, 0.0))
+    return gas
+
+
+@quantity(
+    name="Fueling",
+    requires=[],
+    description="fueling rate (main ion gas puff)",
+    unit="s⁻¹",
+)
+def calc_Fueling(watch=None, grid=None, comp=None, **kw):
+    gas = calc_Gas_puff(watch=watch, grid=grid, comp=comp)
+    if len(gas) and gas[0] > 0:
+        return np.array([gas[0]])
+    return np.array([0.0])
+
+
+@quantity(
+    name="Seeding",
+    requires=[],
+    description="seeding rate (radiating impurity gas puff)",
+    unit="s⁻¹",
+)
+def calc_Seeding(watch=None, grid=None, comp=None, **kw):
+    gas = calc_Gas_puff(watch=watch, grid=grid, comp=comp)
+    if len(gas) and gas[-1] > 0:
+        return np.array([gas[-1]])
+    return np.array([0.0])
+
+
+# ──────────────────────────────────────────────────────────────
+# Region-integrated quantities (lines 1414-1429)
+# ──────────────────────────────────────────────────────────────
+
+def _region_integrals(watch, grid, comp) -> dict:
+    cached = getattr(watch, "_region_integrals", None)
+    if cached is not None:
+        return cached
+    ws = _ws(watch)
+    ns = ws["na"].shape[1]
+    n_reg = grid.cv_reg.max()
+    Na_reg = np.zeros((8, ns))
+    she_rad_reg = np.zeros(8)
+    she_eir_reg = np.zeros(8)
+    she_radbrm_reg = np.zeros((8, ns))
+    she_radlin_reg = np.zeros((8, ns))
+    cv_vol = grid.cv_vol
+    cv_reg = grid.cv_reg
+    for i_reg in range(1, min(8, n_reg) + 1):
+        cvs = np.where(cv_reg == i_reg)[0]
+        if cvs.size == 0:
+            continue
+        Na_reg[i_reg - 1, :] = (ws["na"][cvs] * cv_vol[cvs, None]).sum(axis=0)
+        she_rad_reg[i_reg - 1] = ws["she_rad"][cvs].sum()
+        she_eir_reg[i_reg - 1] = ws["she_eir"][cvs].sum() if "she_eir" in ws else 0.0
+        she_radbrm_reg[i_reg - 1, :] = ws["she_radbrm"][cvs].sum(axis=0)
+        she_radlin_reg[i_reg - 1, :] = ws["she_radlin"][cvs].sum(axis=0)
+    out = {
+        "Na_reg": Na_reg, "she_rad_reg": she_rad_reg, "she_eir_reg": she_eir_reg,
+        "she_radbrm_reg": she_radbrm_reg, "she_radlin_reg": she_radlin_reg,
+    }
+    watch._region_integrals = out
+    return out
+
+
+@quantity(
+    name="Na_reg",
+    requires=[],
+    description="particle inventory per region",
+    unit="",
+)
+def calc_Na_reg(watch=None, grid=None, comp=None, **kw):
+    return _region_integrals(watch, grid, comp).get("Na_reg", np.zeros(0))
+
+
+@quantity(
+    name="she_rad_reg",
+    requires=[],
+    description="radiation power per region",
+    unit="W",
+)
+def calc_she_rad_reg(watch=None, grid=None, comp=None, **kw):
+    return _region_integrals(watch, grid, comp).get("she_rad_reg", np.zeros(0))
+
+
+# ──────────────────────────────────────────────────────────────
+# Electric fields and gradients (lines 1431-1471)
+# ──────────────────────────────────────────────────────────────
+
+@quantity(
+    name="Hx1",
+    requires=[],
+    description="poloidal connector length per cell",
+    unit="m",
+)
+def calc_Hx1(watch=None, grid=None, **kw):
+    hx1 = np.zeros(grid.n_cells)
+    if grid.fc_qalf is None or grid.fc_hc is None or grid.fc_cv is None:
+        return hx1
+    mask = np.abs(grid.fc_qalf[:, 0]) > 0.1
+    fc_cv = grid.fc_cv[mask]
+    fc_hc = grid.fc_hc[mask]
+    np.add.at(hx1, fc_cv[:, 0], fc_hc[:, 0])
+    np.add.at(hx1, fc_cv[:, 1], fc_hc[:, 1])
+    return hx1
+
+
+@quantity(
+    name="E_r",
+    requires=[],
+    description="radial electric field",
+    unit="V/m",
+    location="face",
+)
+def calc_E_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    from solps_analysis.core.operators import grad_r_us
+    funv = np.zeros(grid.n_vertices)
+    bp_dir = getattr(grid, "bp_dir", 0) or -1
+    return -grad_r_us(grid, 1, ws["po"], funv) * bp_dir
+
+
+@quantity(
+    name="E_th",
+    requires=[],
+    description="poloidal electric field",
+    unit="V/m",
+    location="face",
+)
+def calc_E_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    from solps_analysis.core.operators import grad_p_us
+    funv = np.zeros(grid.n_vertices)
+    bp_dir = getattr(grid, "bp_dir", 0) or -1
+    return -grad_p_us(grid, 1, ws["po"], funv) * bp_dir
+
+
+@quantity(
+    name="gradPe_r",
+    requires=[],
+    description="radial electron pressure gradient",
+    unit="Pa/m",
+    location="face",
+)
+def calc_gradPe_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    from solps_analysis.core.operators import grad_r_us
+    funv = np.zeros(grid.n_vertices)
+    return grad_r_us(grid, 1, QE * ws["ne"] * ws["te"], funv)
+
+
+@quantity(
+    name="gradPe_th",
+    requires=[],
+    description="poloidal electron pressure gradient",
+    unit="Pa/m",
+    location="face",
+)
+def calc_gradPe_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    from solps_analysis.core.operators import grad_p_us
+    funv = np.zeros(grid.n_vertices)
+    return grad_p_us(grid, 1, QE * ws["ne"] * ws["te"], funv)
+
+
+@quantity(
+    name="gradPi_r",
+    requires=[],
+    description="radial ion pressure gradient per species",
+    unit="Pa/m",
+    location="face",
+)
+def calc_gradPi_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    from solps_analysis.core.operators import grad_r_us
+    funv = np.zeros(grid.n_vertices)
+    ns = ws["na"].shape[1]
+    out = np.zeros((grid.n_faces, ns))
+    for is_ in range(ns):
+        out[:, is_] = grad_r_us(grid, 1, QE * ws["na"][:, is_] * ws["ti"], funv)
+    return out
+
+
+@quantity(
+    name="gradPi_th",
+    requires=[],
+    description="poloidal ion pressure gradient per species",
+    unit="Pa/m",
+    location="face",
+)
+def calc_gradPi_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    from solps_analysis.core.operators import grad_p_us
+    funv = np.zeros(grid.n_vertices)
+    ns = ws["na"].shape[1]
+    out = np.zeros((grid.n_faces, ns))
+    for is_ in range(ns):
+        out[:, is_] = grad_p_us(grid, 1, QE * ws["na"][:, is_] * ws["ti"], funv)
+    return out
+
+
+@quantity(
+    name="gradTe_r",
+    requires=[],
+    description="radial electron temperature gradient",
+    unit="eV/m",
+    location="face",
+)
+def calc_gradTe_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    from solps_analysis.core.operators import grad_r_us
+    funv = np.zeros(grid.n_vertices)
+    return grad_r_us(grid, 1, ws["te"], funv)
+
+
+@quantity(
+    name="gradTi_r",
+    requires=[],
+    description="radial ion temperature gradient",
+    unit="eV/m",
+    location="face",
+)
+def calc_gradTi_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    from solps_analysis.core.operators import grad_r_us
+    funv = np.zeros(grid.n_vertices)
+    return grad_r_us(grid, 1, ws["ti"], funv)
+
+
+@quantity(
+    name="gradTe_th",
+    requires=[],
+    description="poloidal electron temperature gradient",
+    unit="eV/m",
+    location="face",
+)
+def calc_gradTe_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    from solps_analysis.core.operators import grad_p_us
+    funv = np.zeros(grid.n_vertices)
+    return grad_p_us(grid, 1, ws["te"], funv)
+
+
+@quantity(
+    name="gradTi_th",
+    requires=[],
+    description="poloidal ion temperature gradient",
+    unit="eV/m",
+    location="face",
+)
+def calc_gradTi_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    from solps_analysis.core.operators import grad_p_us
+    funv = np.zeros(grid.n_vertices)
+    return grad_p_us(grid, 1, ws["ti"], funv)
+
+
+@quantity(
+    name="vel_ExBc_th",
+    requires=[],
+    description="cell-centered ExB velocity, poloidal",
+    unit="m/s",
+)
+def calc_vel_ExBc_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    from solps_analysis.core.operators import intcell_us
+    ns = ws["vel_ExB_th"].shape[1]
+    out = np.zeros((grid.n_cells, ns))
+    for is_ in range(ns):
+        out[:, is_] = intcell_us(grid, grid.intcell_p, ws["vel_ExB_th"][:, is_])
+    return out
+
+
+@quantity(
+    name="ua_th",
+    requires=[],
+    description="poloidal projection of parallel velocity",
+    unit="m/s",
+)
+def calc_ua_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    cv_bb = grid.cv_bb if grid.cv_bb is not None else np.ones((grid.n_cells, 4))
+    return ws["ua"] * cv_bb[:, 0:1] / np.maximum(cv_bb[:, 3:4], 1e-30)
+
+
+@quantity(
+    name="cs_th",
+    requires=[],
+    description="poloidal projection of sound speed",
+    unit="m/s",
+)
+def calc_cs_th(watch=None, grid=None, comp=None, **kw):
+    cs = _sep_get(watch, grid, comp, "cs")
+    if cs.size == 0:
+        return np.zeros(grid.n_cells)
+    cv_bb = grid.cv_bb if grid.cv_bb is not None else np.ones((grid.n_cells, 4))
+    return cs * cv_bb[:, 0] / np.maximum(cv_bb[:, 3], 1e-30)
+
+
+@quantity(
+    name="E_up_r",
+    requires=[],
+    description="radial E-field from ExB (up)",
+    unit="V/m",
+    location="face",
+)
+def calc_E_up_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    from solps_analysis.core.operators import intcell_us
+    ns = ws["vel_ExB_th"].shape[1]
+    vel_c = np.zeros((grid.n_cells, ns))
+    for is_ in range(ns):
+        vel_c[:, is_] = intcell_us(grid, grid.intcell_p, ws["vel_ExB_th"][:, is_])
+    cv_bb = grid.cv_bb if grid.cv_bb is not None else np.ones((grid.n_cells, 4))
+    e_upc_r = vel_c[:, 1] * cv_bb[:, 3] ** 2 / np.maximum(cv_bb[:, 2], 1e-30)
+    bp_dir = getattr(grid, "bp_dir", 0) or -1
+    return intface(grid, e_upc_r, 1, _intface_method(grid)) * bp_dir
+
 @quantity(
     name="smo_vis_tot",
     requires=[],
