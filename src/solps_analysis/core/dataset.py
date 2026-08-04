@@ -11,6 +11,19 @@ import numpy as np
 from solps_analysis.core.grid import GridTopology
 from solps_analysis.core.variable import SolpsVariable, VariableMeta
 from solps_analysis.io.geometry_reader import read_geometry, read_b2fstati
+
+# Units for MATLAB-style workspace variables (read_data_3x.m semantics).
+# Base name before the first "_" is used as fallback.
+_WORKSPACE_UNITS: dict[str, str] = {
+    "te": "eV", "ti": "eV", "tn": "eV", "ne": "m⁻³", "na": "m⁻³",
+    "ua": "m/s", "ue": "m/s", "uap": "m/s", "po": "V", "Zeff": "",
+    "she": "W/m³", "shi": "W/m³", "reshe": "W/m³", "reshi": "W/m³",
+    "resht": "W/m³", "respo": "A/m³", "sch": "A/m²", "taua": "s",
+    "taue": "s", "sna": "m⁻³s⁻¹", "dnadt": "m⁻³s⁻¹", "fna": "m⁻²s⁻¹",
+    "fhe": "W/m²", "fhi": "W/m²", "fch": "A/m²", "fmo": "N/m²",
+    "smo": "N/m³", "she_rad": "W/m³", "she_radlin": "W/m³",
+    "she_radbrm": "W/m³", "vel_ExB": "m/s", "vel_BgradB": "m/s",
+}
 from solps_analysis.io.data_readers import (
     read_structured_dat,
     read_unstructured_dat,
@@ -279,6 +292,43 @@ class SolpsWatch:
 
     def get(self, name: str) -> SolpsVariable | None:
         return self._variables.get(name)
+
+    @property
+    def workspace(self) -> dict[str, np.ndarray]:
+        """MATLAB-style workspace (read_data_3x.m port), built lazily.
+
+        Contains the *assembled* physical variables under MATLAB names:
+        te/ti (in eV), ne, po, na (nCv×ns), ua, reshe/reshi/resht/respo,
+        sch, fna_mdf_th/r, sna, taua, … — 178 variables. This is the
+        third data level:
+          raw .dat files  → watch.get("b2nph9_te")     (list_variables)
+          MATLAB workspace → watch.workspace["te"]     (list_workspace_vars)
+          derived physics → watch.construct("te_sep")  (list_quantities)
+        """
+        cached = getattr(self, "_workspace_cache", None)
+        if cached is None:
+            from solps_analysis.io.matlab_vars import build_workspace
+            cached = build_workspace(self)
+            self._workspace_cache = cached
+        return cached
+
+    def list_workspace_vars(self) -> list[str]:
+        """Names of MATLAB-style workspace variables (assembled physics)."""
+        return sorted(self.workspace.keys())
+
+    def ws_var(self, name: str) -> SolpsVariable | None:
+        """A workspace variable as a SolpsVariable (with unit metadata).
+
+        Example: watch.ws_var("na") → SolpsVariable (nCv×ns densities),
+        watch.ws_var("reshe") → residual electron heat source.
+        """
+        data = self.workspace.get(name)
+        if data is None:
+            return None
+        return SolpsVariable(
+            data=np.asarray(data, dtype=np.float64),
+            meta=VariableMeta(name=name, unit=_WORKSPACE_UNITS.get(name, "")),
+        )
 
     def list_variables(self) -> list[str]:
         return sorted(self._variables.keys())
