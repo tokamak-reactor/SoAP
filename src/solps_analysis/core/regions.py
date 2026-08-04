@@ -393,7 +393,17 @@ def find_targets(grid: GridTopology) -> None:
         return
 
     from solps_analysis.core.regions import find_sep_fc_vx
-    sep_vx, sep_fc = find_sep_fc_vx(grid, grid.fs_sep, grid.xp_vx[0])
+    sep_vx_all = []
+    sep_fc_all = []
+    fs_sep = np.atleast_1d(grid.fs_sep)
+    xp_list = np.atleast_1d(grid.xp_vx)
+    for xp in xp_list:
+        for fs in fs_sep:
+            sv, sf = find_sep_fc_vx(grid, np.array([fs]), int(xp))
+            sep_vx_all.extend(sv.tolist())
+            sep_fc_all.extend(sf.tolist())
+    sep_vx = np.unique(np.asarray(sep_vx_all, dtype=np.int32))
+    sep_fc = np.unique(np.asarray(sep_fc_all, dtype=np.int32))
     grid.sep_vx = sep_vx
     grid.sep_fc = sep_fc
 
@@ -493,26 +503,33 @@ def find_sep_fc_vx(grid: GridTopology, fs_sep: np.ndarray,
     if len(sep_at_vx) < 2:
         return np.array([xp_vx], dtype=np.int32), sep_at_vx
 
-    # Walk along faces
-    all_faces = [int(sep_at_vx[0])]
-    all_vx = [xp_vx]
+    def _walk(start_fc: int) -> tuple[list, list]:
+        """Walk one branch of the separatrix from start_fc."""
+        faces = [int(start_fc)]
+        vx = [xp_vx]
+        curr_fc = int(start_fc)
+        prev_vx = xp_vx
+        for _ in range(len(fs_faces)):
+            v1, v2 = grid.fc_vx[curr_fc]
+            next_vx = v1 if v2 == prev_vx else v2
+            vx.append(int(next_vx))
+            vx_fcs = grid.vx_fc[grid.vx_fc_p[next_vx, 0]:grid.vx_fc_p[next_vx, 0] + grid.vx_fc_p[next_vx, 1]]
+            next_fcs = np.setdiff1d(np.intersect1d(vx_fcs, fs_faces), faces)
+            if len(next_fcs) == 0:
+                break
+            curr_fc = int(next_fcs[0])
+            faces.append(curr_fc)
+            prev_vx = next_vx
+        return vx, faces
 
-    curr_fc = int(sep_at_vx[0])
-    prev_vx = xp_vx
-
-    for _ in range(len(fs_faces)):
-        v1, v2 = grid.fc_vx[curr_fc]
-        next_vx = v1 if v2 == prev_vx else v2
-        all_vx.append(int(next_vx))
-
-        # Find the next face on this flux surface using next_vx
-        vx_fcs = grid.vx_fc[grid.vx_fc_p[next_vx, 0]:grid.vx_fc_p[next_vx, 0] + grid.vx_fc_p[next_vx, 1]]
-        next_fcs = np.setdiff1d(np.intersect1d(vx_fcs, fs_faces), all_faces)
-        if len(next_fcs) == 0:
-            break
-        curr_fc = int(next_fcs[0])
-        all_faces.append(curr_fc)
-        prev_vx = next_vx
+    all_vx = []
+    all_faces = []
+    for branch in (sep_at_vx[0], sep_at_vx[1]):
+        bv, bf = _walk(int(branch))
+        all_vx.extend(bv)
+        all_faces.extend(bf)
+    all_vx = list(dict.fromkeys(all_vx))  # unique, preserve order
+    all_faces = list(dict.fromkeys(all_faces))
 
     return np.array(all_vx, dtype=np.int32), np.array(all_faces, dtype=np.int32)
 
@@ -717,7 +734,7 @@ def _compute_orientation(grid: GridTopology) -> None:
             fc_or[iFc] = -1
 
     grid.cv_or = cv_or
-    grid.fc_or = fc_or
+    grid._fc_or_cache = fc_or.astype(np.float64)  # fc_or is a lazy property
 
     # Field direction from OMP
     if hasattr(grid, 'outer_midplane_cells') and grid.outer_midplane_cells is not None and \

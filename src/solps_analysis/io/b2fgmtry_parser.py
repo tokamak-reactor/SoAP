@@ -123,6 +123,7 @@ def read_b2fgmtry(path: str | Path) -> dict[str, Any]:
 
     # Build dimension metadata
     result: dict[str, Any] = {}
+    result["_version"] = data.get("_version")
 
     # Copy everything, but also resolve named fields with commas
     for key, value in data.items():

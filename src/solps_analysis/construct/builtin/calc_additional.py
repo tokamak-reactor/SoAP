@@ -2328,9 +2328,15 @@ def _column_sums(watch, grid, comp) -> dict:
         watch._column_sums = {}
         return {}
 
-    n_cols = imap_fcy.shape[1]
+    if imap_fcy.ndim == 1:
+        n_cols = 1
+    else:
+        n_cols = imap_fcy.shape[1]
     for col in range(n_cols):
-        col_fcy = imap_fcy[:, col]
+        if imap_fcy.ndim == 1:
+            col_fcy = imap_fcy
+        else:
+            col_fcy = imap_fcy[:, col]
         col_fcy = col_fcy[col_fcy != 0]
         if col_fcy.size == 0:
             continue
@@ -2561,6 +2567,85 @@ def calc_fh_pls_r(watch=None, grid=None, comp=None, **kw):
 # ──────────────────────────────────────────────────────────────
 
 ME = 9.1093837015e-31  # electron mass, kg
+
+
+def _ptr(grid, kind: str, i: int) -> int:
+    """Start index for pointer array i (MATLAB 1-based vs 0-based).
+
+    Unstructured grids store 0-based pointers; structured grids keep
+    1-based ft_*/fs_* pointers (only cv_fc_p is 0-based everywhere).
+    Detect by the first pointer value.
+    """
+    p = {"ft_cv": grid.ft_cv_p, "ft_fc": grid.ft_fc_p, "fs_fc": grid.fs_fc_p}[kind]
+    if p is None:
+        return 0
+    if p[0, 0] > 0:
+        return p[i, 0] - 1
+    return p[i, 0]
+
+
+def _target_labels(grid) -> tuple[int, int]:
+    """Determine (inner, outer) target labels by face coordinates.
+
+    Fallback for grids where find_targets cannot classify targets via
+    the separatrix walk (e.g. unstructured wide-grid runs where the
+    separatrix touches only two of the four targets).
+
+    Target labels = boundary labels with many faces (>=10) and large |y|
+    (divertor targets), excluding core-boundary labels (-21/-25).
+    Inner = smaller mean x (HFS), outer = larger mean x (LFS).
+    Returns (inner_lbl, outer_lbl) in {-1, -1} if not determinable.
+    """
+    if grid.fc_lbl is None or grid.fc_x is None or grid.fc_y is None:
+        return -1, -1
+    lbls = np.unique(grid.fc_lbl[grid.fc_lbl != 0])
+    stats = []
+    for lbl in lbls:
+        if lbl in (-21, -25):
+            continue
+        fcs = np.where(grid.fc_lbl == lbl)[0]
+        if fcs.size < 10:
+            continue  # drop tiny corner labels (e.g. 5, 7)
+        my = np.abs(grid.fc_y[fcs]).mean()
+        mx = grid.fc_x[fcs].mean()
+        stats.append((lbl, mx, my))
+    if len(stats) < 2:
+        return -1, -1
+    stats = np.array(stats)
+    # targets are the two labels with largest |y| (one inner, one outer)
+    order = np.argsort(stats[:, 2])[::-1]
+    top = stats[order[:2]]
+    inner_lbl = int(top[np.argmin(top[:, 1]), 0])
+    outer_lbl = int(top[np.argmax(top[:, 1]), 0])
+    return inner_lbl, outer_lbl
+
+
+def _target_cells(grid, inner: bool, top: bool = False) -> np.ndarray:
+    """Cells of the (inner/outer × lower/upper) target by label geometry.
+
+    lower targets: y < 0 ; upper targets: y > 0 (only when top=True).
+    Returns CORE cells adjacent to the target faces (cells with flux-tube
+    indices; MATLAB cv_*_active_tar semantics).
+    """
+    if grid.fc_lbl is None or grid.fc_cv is None or grid.fc_y is None:
+        return np.array([], dtype=np.intp)
+    inner_lbl, outer_lbl = _target_labels(grid)
+    if inner_lbl < 0:
+        return np.array([], dtype=np.intp)
+    target_lbl = inner_lbl if inner else outer_lbl
+    fcs = np.where(grid.fc_lbl == target_lbl)[0]
+    if fcs.size == 0:
+        return np.array([], dtype=np.intp)
+    if top:
+        mask = grid.fc_y[fcs] > 0
+    else:
+        mask = grid.fc_y[fcs] < 0
+    fcs = fcs[mask]
+    if fcs.size == 0:
+        return np.array([], dtype=np.intp)
+    n_ci = grid.n_core_cells
+    cvs = np.unique(grid.fc_cv[fcs].ravel())
+    return cvs[cvs < n_ci]
 
 
 def _wall_quantities(watch, grid, comp) -> dict:
@@ -2943,6 +3028,10 @@ def _sep_quantities(watch, grid, comp) -> dict:
 
         in_str_cvs = grid.cv_inner_tar
         out_str_cvs = grid.cv_outer_tar
+        if in_str_cvs is None or len(in_str_cvs) == 0:
+            in_str_cvs = _target_cells(grid, inner=True)
+        if out_str_cvs is None or len(out_str_cvs) == 0:
+            out_str_cvs = _target_cells(grid, inner=False)
         if in_str_cvs is not None and len(in_str_cvs):
             in_reg = np.unique(cv_reg[in_str_cvs])[0]
             N_in_div[ia] = N_sorts_by_Reg[in_reg - 1, ia] if in_reg - 1 < N_sorts_by_Reg.shape[0] else 0.0
@@ -3026,8 +3115,14 @@ def _sep_quantities(watch, grid, comp) -> dict:
     Compr_outdiv_sep = n_out_div_avr / np.maximum(n_sep, 1e-30)
     Compr_indiv_ped = n_in_div_avr / np.maximum(n_ped, 1e-30)
     Compr_outdiv_ped = n_out_div_avr / np.maximum(n_ped, 1e-30)
-    in_reg0 = np.unique(cv_reg[grid.cv_inner_tar])[0] if grid.cv_inner_tar is not None and len(grid.cv_inner_tar) else 1
-    out_reg0 = np.unique(cv_reg[grid.cv_outer_tar])[0] if grid.cv_outer_tar is not None and len(grid.cv_outer_tar) else 2
+    in_tar = grid.cv_inner_tar
+    out_tar = grid.cv_outer_tar
+    if in_tar is None or len(in_tar) == 0:
+        in_tar = _target_cells(grid, inner=True)
+    if out_tar is None or len(out_tar) == 0:
+        out_tar = _target_cells(grid, inner=False)
+    in_reg0 = np.unique(cv_reg[in_tar])[0] if in_tar is not None and len(in_tar) else 1
+    out_reg0 = np.unique(cv_reg[out_tar])[0] if out_tar is not None and len(out_tar) else 2
     v_div = volReg[in_reg0 - 1] + volReg[out_reg0 - 1] if in_reg0 <= volReg.size and out_reg0 <= volReg.size else 1.0
     Compr_div_sep = (N_in_div + N_out_div) / np.maximum(n_sep, 1e-30) / max(v_div, 1e-30)
     Compr_div_ped = (N_in_div + N_out_div) / np.maximum(n_ped, 1e-30) / max(v_div, 1e-30)
@@ -3584,7 +3679,7 @@ def calc_numcoli(watch=None, grid=None, comp=None, **kw):
     if fc_hc is None or fc_bb is None:
         return numcoli
     for i_ft in range(n_ft):
-        start = ft_fc_p[i_ft, 0] - 1  # MATLAB 1-based pointer
+        start = _ptr(grid, "ft_fc", i_ft)
         for k in range(ft_fc_p[i_ft, 1]):
             i_fc = ft_fc[start + k]
             with np.errstate(divide="ignore", invalid="ignore"):
@@ -3713,7 +3808,7 @@ def calc_E_NEO_r(watch=None, grid=None, comp=None, **kw):
     wrk = np.zeros(n_ft)
     if fc_hc is not None:
         for i_ft in range(n_ft):
-            start = ft_fc_p[i_ft, 0] - 1  # MATLAB 1-based pointer
+            start = _ptr(grid, "ft_fc", i_ft)
             for k in range(ft_fc_p[i_ft, 1]):
                 i_fc = ft_fc[start + k]
                 s = fc_hc[i_fc, 0] + fc_hc[i_fc, 1]
@@ -3755,7 +3850,7 @@ def calc_E_NEO_r(watch=None, grid=None, comp=None, **kw):
     ua_B_mean = np.zeros(grid.n_cells)
     wrk = np.zeros(n_ft)
     for i_ft in range(n_ft):
-        start = ft_cv_p[i_ft, 0] - 1  # MATLAB 1-based pointer
+        start = _ptr(grid, "ft_cv", i_ft)
         for k in range(ft_cv_p[i_ft, 1]):
             i_cv = ft_cv[start + k]
             wrk[i_ft] += ws["ua"][i_cv, 1] * cv_vol[i_cv] * cv_bb[i_cv, 3]
@@ -3790,13 +3885,14 @@ def _ft_conn(grid) -> np.ndarray:
         fc_hc = grid.fc_hc
         fc_bb = grid.fc_bb
         for i_ft in range(n_ft):
-            start = ft_fc_p[i_ft, 0] - 1  # MATLAB 1-based pointer
+            start = _ptr(grid, "ft_fc", i_ft)
             for k in range(ft_fc_p[i_ft, 1]):
                 i_fc = ft_fc[start + k]
                 out[i_ft] += (fc_hc[i_fc, 0] + fc_hc[i_fc, 1]) * fc_bb[i_fc, 3] / max(fc_bb[i_fc, 0], 1e-30)
             if ft_fc_p[i_ft, 1] == 0 and grid.ft_cv_p is not None and grid.ft_cv is not None and grid.cv_bb is not None:
                 # boundary flux tubes without faces: use first face of each cell
-                cvs = grid.ft_cv[grid.ft_cv_p[i_ft, 0] - 1:grid.ft_cv_p[i_ft, 0] - 1 + grid.ft_cv_p[i_ft, 1]]
+                s0 = _ptr(grid, "ft_cv", i_ft)
+                cvs = grid.ft_cv[s0:s0 + grid.ft_cv_p[i_ft, 1]]
                 for i_cv in cvs:
                     if grid.cv_fc_p is not None and grid.cv_fc is not None:
                         i_fc0 = grid.cv_fc[grid.cv_fc_p[i_cv, 0]]
@@ -3816,7 +3912,7 @@ def _ft_vol(grid) -> np.ndarray:
     out = np.zeros(n_ft)
     if grid.cv_vol is not None:
         for i_ft in range(n_ft):
-            start = ft_cv_p[i_ft, 0] - 1  # MATLAB 1-based pointer
+            start = _ptr(grid, "ft_cv", i_ft)
             cvs = ft_cv[start:start + ft_cv_p[i_ft, 1]]
             out[i_ft] = grid.cv_vol[cvs].sum()
     grid._ft_vol_cache = out
@@ -3852,6 +3948,14 @@ def _ft_source_integrals(watch, grid, comp) -> dict:
     # flux tubes in the SOL of the outer divertor (line 1642)
     cv_outer_tar = grid.cv_outer_tar
     cv_ft = grid.cv_ft
+    if cv_outer_tar is None or len(cv_outer_tar) == 0:
+        # fallback: outer target from label geometry (unstructured WG)
+        cv_outer_tar = _target_cells(grid, inner=False)
+        cv_inner_tar = _target_cells(grid, inner=True)
+        if cv_outer_tar.size:
+            grid.cv_outer_tar = cv_outer_tar
+        if cv_inner_tar.size:
+            grid.cv_inner_tar = cv_inner_tar
     if cv_outer_tar is None or len(cv_outer_tar) == 0:
         watch._ft_source_integrals = {}
         return {}
@@ -3929,7 +4033,7 @@ def _ft_source_integrals(watch, grid, comp) -> dict:
     for i_ft in fts:
         if i_ft >= n_ft:
             continue
-        start = ft_cv_p[i_ft, 0] - 1  # MATLAB 1-based pointer
+        start = _ptr(grid, "ft_cv", i_ft)
         cvs = ft_cv[start:start + ft_cv_p[i_ft, 1]]
         if cvs.size == 0:
             continue
