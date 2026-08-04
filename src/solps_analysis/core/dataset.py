@@ -105,6 +105,24 @@ def _worker_read(file_path: str) -> np.ndarray:
     return _transform_values(_WORKER_GRID, file_path, values)
 
 
+def _pool_context():
+    """multiprocessing context for the read pool.
+
+    Prefer fork on POSIX: it inherits the grid memory directly (no
+    pickle per task) and avoids the Python 3.14 forkserver socket
+    handshake that can fail in embedded/sandboxed environments.
+    Returns None when fork is unavailable (Windows) — executor then
+    uses the default context.
+    """
+    try:
+        import multiprocessing as mp
+        if "fork" in mp.get_all_start_methods():
+            return mp.get_context("fork")
+    except Exception:
+        pass
+    return None
+
+
 @dataclass
 class SolpsWatch:
     """Represents a single SOLPS-ITER watch (one time snapshot).
@@ -272,7 +290,9 @@ class SolpsWatch:
 
         Uses a process pool: np.genfromtxt/np.loadtxt hold the GIL, so
         threads give no speedup; processes fork and inherit the grid once
-        (Linux), only file paths cross the queue.
+        (Linux), only file paths cross the queue. Falls back to
+        sequential reading if the process pool cannot start (e.g.
+        forkserver auth issues in embedded/sandboxed environments).
         """
         from concurrent.futures import ProcessPoolExecutor
 
@@ -284,14 +304,22 @@ class SolpsWatch:
             return
 
         paths = [fp for _, fp in items]
-        with ProcessPoolExecutor(
-            max_workers=n_workers,
-            initializer=_worker_init,
-            initargs=(self.grid,),
-        ) as pool:
-            for (vn, fp), data in zip(items, pool.map(_worker_read, paths, chunksize=16)):
-                self._dat_cache[fp] = data
-                self._store_variable(vn, fp, data)
+        try:
+            pool_ctx = _pool_context()
+            with ProcessPoolExecutor(
+                max_workers=n_workers,
+                mp_context=pool_ctx,
+                initializer=_worker_init,
+                initargs=(self.grid,),
+            ) as pool:
+                for (vn, fp), data in zip(items, pool.map(_worker_read, paths, chunksize=16)):
+                    self._dat_cache[fp] = data
+                    self._store_variable(vn, fp, data)
+        except Exception:
+            # Process pool unavailable (forkserver auth reset, fork
+            # restrictions, …) — read sequentially, correctness first.
+            for var_name, file_path in items:
+                self._load_one(var_name, file_path)
 
     def _load_selected(self, var_names: list[str], max_workers: int | None = None) -> None:
         """Load only selected variables (parallel by default)."""
@@ -306,14 +334,20 @@ class SolpsWatch:
             return
 
         paths = [fp for _, fp in items]
-        with ProcessPoolExecutor(
-            max_workers=n_workers,
-            initializer=_worker_init,
-            initargs=(self.grid,),
-        ) as pool:
-            for (vn, fp), data in zip(items, pool.map(_worker_read, paths, chunksize=16)):
-                self._dat_cache[fp] = data
-                self._store_variable(vn, fp, data)
+        try:
+            pool_ctx = _pool_context()
+            with ProcessPoolExecutor(
+                max_workers=n_workers,
+                mp_context=pool_ctx,
+                initializer=_worker_init,
+                initargs=(self.grid,),
+            ) as pool:
+                for (vn, fp), data in zip(items, pool.map(_worker_read, paths, chunksize=16)):
+                    self._dat_cache[fp] = data
+                    self._store_variable(vn, fp, data)
+        except Exception:
+            for var_name, file_path in items:
+                self._load_one(var_name, file_path)
 
     def _load_one(self, var_name: str, file_path: str) -> None:
         """Sequentially read a single variable file."""
