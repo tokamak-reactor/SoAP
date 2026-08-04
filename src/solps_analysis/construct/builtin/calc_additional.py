@@ -894,3 +894,136 @@ def _species_mass_kg(comp):
     if am is None:
         return None
     return np.asarray(am, dtype=np.float64) * MP
+
+
+# ──────────────────────────────────────────────────────────────
+# smo_vis_tot (lines 473-475)
+# ──────────────────────────────────────────────────────────────
+
+@quantity(
+    name="smo_vis_tot",
+    requires=[],
+    description="total viscous momentum source",
+    unit="Pa/m",
+)
+def calc_smo_vis_tot(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    return (ws["smo_visq"] + ws["smo_vispar"]
+            - (calc_div_fmo_vis(watch=watch, grid=grid)
+               + calc_div_fmo_viscurv(watch=watch, grid=grid, comp=comp)))
+
+
+@quantity(
+    name="smo_vis_tot_th",
+    requires=[],
+    description="poloidal part of total viscous momentum source",
+    unit="Pa/m",
+)
+def calc_smo_vis_tot_th(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    return (ws["smo_visq"] + ws["smo_vispar"]
+            - (calc_div_fmo_vis_th(watch=watch, grid=grid)
+               + calc_div_fmo_viscurv(watch=watch, grid=grid, comp=comp)))
+
+
+@quantity(
+    name="smo_vis_tot_r",
+    requires=[],
+    description="radial part of total viscous momentum source",
+    unit="Pa/m",
+)
+def calc_smo_vis_tot_r(watch=None, grid=None, **kw):
+    ws = _ws(watch)
+    return -(calc_div_fmo_vis_r(watch=watch, grid=grid))
+
+
+# ──────────────────────────────────────────────────────────────
+# snas / snas_bound_reg (lines 497-521)
+# ──────────────────────────────────────────────────────────────
+
+def _element_ion_indices(comp, ns: int) -> list[list[int]]:
+    """For each element, indices of charged states (excludes neutral).
+
+    MATLAB comp.sorts_index{isort}(2:end) with 1-based → 0-based here.
+    """
+    indices = getattr(comp, "element_indices_list", None)
+    if indices is None:
+        return [list(range(ns))]
+    out = []
+    for idx_list in indices:
+        if len(idx_list) > 1:
+            out.append(list(idx_list[1:]))  # drop neutral
+        else:
+            out.append([])
+    return out
+
+
+def _cvs_boundary(grid):
+    """Guard-cell groups per boundary label (lazy, cached on grid).
+
+    MATLAB read_geometry.m: for each fcLbl value, collect cells of those
+    faces that are not core cells (cv_indx_0).  Order is irrelevant for
+    the sums used in calc_additional.
+    """
+    cached = getattr(grid, "_cvs_boundary_cache", None)
+    if cached is not None:
+        return cached
+    out = []
+    if grid.fc_lbl is not None and grid.fc_cv is not None:
+        n_ci = grid.n_core_cells
+        for lbl in np.unique(grid.fc_lbl[grid.fc_lbl != 0]):
+            mask = grid.fc_lbl == lbl
+            cvs = np.unique(grid.fc_cv[mask])  # 0-based
+            cvs = cvs[cvs >= n_ci]  # guard cells only
+            out.append((int(lbl), cvs))
+    grid._cvs_boundary_cache = out
+    return out
+
+
+@quantity(
+    name="snas",
+    requires=[],
+    description="neutral source per element (sum of ion sources)",
+    unit="m⁻³ s⁻¹",
+)
+def calc_snas(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    if comp is None:
+        return np.zeros(grid.n_cells)
+    eirene_flag = getattr(watch, "neut", None) is not None
+    src = ws["sna_eir"] if eirene_flag and "sna_eir" in ws else ws.get("sna")
+    if src is None:
+        return np.zeros(grid.n_cells)
+    ns = src.shape[1]
+    ion_idx = _element_ion_indices(comp, ns)
+    out = np.zeros((grid.n_cells, len(ion_idx)))
+    for iel, idxs in enumerate(ion_idx):
+        if idxs:
+            out[:, iel] = src[:, idxs].sum(axis=1)
+    return out
+
+
+@quantity(
+    name="snas_bound_reg",
+    requires=[],
+    description="neutral source integrated per boundary region and element",
+    unit="s⁻¹",
+)
+def calc_snas_bound_reg(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    if comp is None:
+        return np.zeros((max(1, grid.cv_reg.max()), 1))
+    eirene_flag = getattr(watch, "neut", None) is not None
+    src = ws["sna_eir"] if eirene_flag and "sna_eir" in ws else ws.get("sna")
+    if src is None:
+        return np.zeros((1, 1))
+    ns = src.shape[1]
+    ion_idx = _element_ion_indices(comp, ns)
+    groups = _cvs_boundary(grid)
+    out = np.zeros((len(groups), len(ion_idx)))
+    for ig, (lbl, cvs) in enumerate(groups):
+        for iel, idxs in enumerate(ion_idx):
+            if len(idxs) > 0:
+                out[ig, iel] = src[np.ix_(np.asarray(cvs, dtype=np.intp),
+                                           np.asarray(idxs, dtype=np.intp))].sum()
+    return out
