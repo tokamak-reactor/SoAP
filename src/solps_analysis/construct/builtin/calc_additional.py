@@ -3557,6 +3557,449 @@ def calc_E_up_r(watch=None, grid=None, comp=None, **kw):
     bp_dir = getattr(grid, "bp_dir", 0) or -1
     return intface(grid, e_upc_r, 1, _intface_method(grid)) * bp_dir
 
+
+# ──────────────────────────────────────────────────────────────
+# Collisionality, pumping, neoclassical E-field (lines 1473-1634)
+# ──────────────────────────────────────────────────────────────
+
+@quantity(
+    name="numcoli",
+    requires=[],
+    description="flux-tube collisionality (nu*tau ratio)",
+    unit="",
+)
+def calc_numcoli(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    cs = _sep_get(watch, grid, comp, "cs")
+    if cs.size == 0:
+        return np.zeros(grid.n_ft if hasattr(grid, "n_ft") else 0)
+    csf = intface(grid, cs, 1, "vol")
+    tauaf = intface(grid, ws["taua"][:, 1], 1, "vol")
+    fc_hc = grid.fc_hc
+    fc_bb = grid.fc_bb
+    ft_fc_p = grid.ft_fc_p
+    ft_fc = grid.ft_fc
+    n_ft = ft_fc_p.shape[0]
+    numcoli = np.zeros(n_ft)
+    if fc_hc is None or fc_bb is None:
+        return numcoli
+    for i_ft in range(n_ft):
+        start = ft_fc_p[i_ft, 0] - 1  # MATLAB 1-based pointer
+        for k in range(ft_fc_p[i_ft, 1]):
+            i_fc = ft_fc[start + k]
+            with np.errstate(divide="ignore", invalid="ignore"):
+                numcoli[i_ft] += 1 / (tauaf[i_fc] * csf[i_fc]) * (fc_hc[i_fc, 0] + fc_hc[i_fc, 1]) \
+                    * fc_bb[i_fc, 3] / max(fc_bb[i_fc, 0], 1e-30)
+    return np.nan_to_num(numcoli, nan=0.0, posinf=0.0)
+
+
+@quantity(
+    name="numcolic",
+    requires=[],
+    description="cell collisionality (from flux tube)",
+    unit="",
+)
+def calc_numcolic(watch=None, grid=None, comp=None, **kw):
+    numcoli = ws_get_nc(watch, grid, comp)
+    cv_ft = grid.cv_ft
+    out = np.zeros(grid.n_cells)
+    if cv_ft is None:
+        return out
+    for i_cv in range(grid.n_cells):
+        i_ft = int(cv_ft[i_cv])
+        if 0 <= i_ft < len(numcoli):
+            out[i_cv] = numcoli[i_ft]
+    return out
+
+
+def ws_get_nc(watch, grid, comp):
+    ws = _ws(watch)
+    if "numcoli" in ws:
+        return ws["numcoli"]
+    nc = calc_numcoli(watch=watch, grid=grid, comp=comp)
+    ws["numcoli"] = nc
+    return nc
+
+
+@quantity(
+    name="Fna_pump",
+    requires=[],
+    description="pumped particle flux per element",
+    unit="s⁻¹",
+)
+def calc_Fna_pump(watch=None, grid=None, comp=None, **kw):
+    if comp is None:
+        return np.zeros(1)
+    nsorts = comp.n_elements
+    out = np.zeros(nsorts)
+    neut = getattr(watch, "neut", None)
+    if neut is not None:
+        wld = neut.get("wld", {})
+        wlpumpa = wld.get("wlpumpa")
+        nsts = int(wld.get("nsts", 0) or 0)
+        if wlpumpa is not None and nsts > 1:
+            arr = np.asarray(wlpumpa)
+            if arr.ndim == 2 and arr.shape[0] >= nsts:
+                out = arr[-(nsts - 1):, :].sum(axis=0)
+            elif arr.ndim == 1:
+                out = arr
+        atm2mol = neut.get("atm2mol")
+        molA = neut.get("molA")
+        if atm2mol is not None and molA is not None:
+            wlpumpm = wld.get("wlpumpm")
+            for ispec in range(nsorts):
+                if ispec < len(atm2mol) and atm2mol[ispec] != 0:
+                    mi = int(atm2mol[ispec])
+                    if wlpumpm is not None and 0 <= mi < len(molA):
+                        arr = np.asarray(wlpumpm)
+                        if arr.ndim == 2 and arr.shape[0] >= nsts and nsts > 1:
+                            out[ispec] += arr[-(nsts - 1):, mi].sum() * molA[mi]
+    return out[:nsorts]
+
+
+@quantity(
+    name="Fh_boundary_seg",
+    requires=[],
+    description="heat load per boundary segment (9 components, MW)",
+    unit="MW",
+)
+def calc_Fh_boundary_seg(watch=None, grid=None, comp=None, **kw):
+    wq = _wall_quantities(watch, grid, comp)
+    fcs_boundary = _fcs_boundary(grid)
+    fc_or = grid.fc_or
+    n_seg = len(fcs_boundary)
+    out = np.zeros((n_seg, 9))
+    for i_seg in range(n_seg):
+        fcs = fcs_boundary[i_seg]
+        if fcs.size == 0:
+            continue
+        out[i_seg, 0] = ((wq["fh_sum_th"][fcs] + wq["fh_sum_r"][fcs]) * fc_or[fcs]).sum()
+        out[i_seg, 1] = ((wq["fh_heat_th"][fcs] + wq["fh_heat_r"][fcs]) * fc_or[fcs]).sum()
+        out[i_seg, 2] = ((wq["fh_vis_r"][fcs] + wq["fh_vis_th"][fcs]) * fc_or[fcs]).sum()
+        out[i_seg, 3] = ((wq["fh_kinrgy_r"][fcs] + wq["fh_kinrgy_th"][fcs]) * fc_or[fcs]).sum()
+        ws = _ws(watch)
+        fh_joule_th = ws.get("fh_joule_th")
+        fh_joule_r = ws.get("fh_joule_r")
+        if fh_joule_th is None or fh_joule_r is None:
+            fh_joule_th = calc_fh_joule_th(watch=watch, grid=grid)
+            fh_joule_r = calc_fh_joule_r(watch=watch, grid=grid)
+        out[i_seg, 4] = ((fh_joule_r[fcs] + fh_joule_th[fcs]) * fc_or[fcs]).sum()
+        out[i_seg, 5] = 0.0  # fhp_sum (recombination)
+        out[i_seg, 6] = (ws.get("fh_nutpr_th", np.zeros(grid.n_faces))[fcs] * fc_or[fcs]).sum()
+        out[i_seg, 7] = (ws.get("fh_neut_tot_th", np.zeros(grid.n_faces))[fcs] * fc_or[fcs]).sum()
+        out[i_seg, 8] = (ws.get("fh_rad_th", np.zeros(grid.n_faces))[fcs] * fc_or[fcs]).sum()
+    return out / 1e6
+
+
+@quantity(
+    name="E_NEO_r",
+    requires=[],
+    description="neoclassical radial electric field",
+    unit="V/m",
+    location="face",
+)
+def calc_E_NEO_r(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    from solps_analysis.core.operators import grad_r_us, intvertex_us, calc_vxVol
+    from solps_analysis.io.matlab_vars import species_am
+
+    # eps per flux tube (lines 1585-1596)
+    ft_fc_p = grid.ft_fc_p
+    ft_fc = grid.ft_fc
+    fc_hc = grid.fc_hc
+    fc_hz = ws.get("fc_hz", np.ones(grid.n_faces))
+    n_ft = ft_fc_p.shape[0]
+    eps = np.zeros(n_ft)
+    wrk = np.zeros(n_ft)
+    if fc_hc is not None:
+        for i_ft in range(n_ft):
+            start = ft_fc_p[i_ft, 0] - 1  # MATLAB 1-based pointer
+            for k in range(ft_fc_p[i_ft, 1]):
+                i_fc = ft_fc[start + k]
+                s = fc_hc[i_fc, 0] + fc_hc[i_fc, 1]
+                eps[i_ft] += s
+                wrk[i_ft] += s * fc_hz[i_fc]
+            if wrk[i_ft] > 0:
+                eps[i_ft] = eps[i_ft] ** 2 / wrk[i_ft]
+    eps = np.nan_to_num(eps, nan=0.0)
+
+    # nu1, K_T (lines 1598-1617)
+    cs = _sep_get(watch, grid, comp, "cs")
+    csf = intface(grid, cs, 1, "vol") if cs.size else np.ones(grid.n_faces)
+    tauaf = intface(grid, ws["taua"][:, 1], 1, "vol")
+    fc_cv = grid.fc_cv
+    cv_ft = grid.cv_ft
+    nu1_face = np.zeros(grid.n_faces)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        nu1_face = 1.0 / (tauaf * csf)
+    ft_conn = _ft_conn(grid)
+    n_fc = grid.n_faces
+    k_t = np.zeros(n_fc)
+    for i_fc in range(n_fc):
+        fts = cv_ft[fc_cv[i_fc]]
+        fts = fts[fts != 0].astype(int)
+        if fts.size == 0:
+            continue
+        epsm = eps[fts].sum() if np.any(eps[fts] == 0) else eps[fts].mean()
+        ft_conn_m = ft_conn[fts].sum() if np.any(ft_conn[fts] == 0) else ft_conn[fts].mean()
+        nu1 = nu1_face[i_fc] * ft_conn_m / (2 * np.pi * epsm * np.sqrt(epsm))
+        k_t[i_fc] = 0.75 * (2.7 * nu1 ** 2 * epsm ** 3 - 0.17 + 1.05 * np.sqrt(nu1)) \
+            / (1 + 0.7 * np.sqrt(nu1) + nu1 ** 2 * epsm ** 3) + 0.25
+
+    # ua_B_mean (lines 1619-1629)
+    ft_cv_p = grid.ft_cv_p
+    ft_cv = grid.ft_cv
+    cv_vol = grid.cv_vol
+    cv_bb = grid.cv_bb if grid.cv_bb is not None else np.ones((grid.n_cells, 4))
+    ft_vol = _ft_vol(grid)
+    ua_B_mean = np.zeros(grid.n_cells)
+    wrk = np.zeros(n_ft)
+    for i_ft in range(n_ft):
+        start = ft_cv_p[i_ft, 0] - 1  # MATLAB 1-based pointer
+        for k in range(ft_cv_p[i_ft, 1]):
+            i_cv = ft_cv[start + k]
+            wrk[i_ft] += ws["ua"][i_cv, 1] * cv_vol[i_cv] * cv_bb[i_cv, 3]
+        cvs = ft_cv[start:start + ft_cv_p[i_ft, 1]]
+        if ft_vol[i_ft] > 0:
+            ua_B_mean[cvs] = 0.75 * wrk[i_ft] / ft_vol[i_ft] * cv_bb[cvs, 0] / np.maximum(cv_bb[cvs, 2], 1e-30)
+    uaf_B_mean = intface(grid, ua_B_mean, 1, "hc")
+
+    # E_NEO_r (lines 1631-1634)
+    funv = np.zeros(grid.n_vertices)
+    grad_n_main = grad_r_us(grid, 0, ws["na"][:, 1], funv)
+    nf_main = intface(grid, ws["na"][:, 1], 1, "vol")
+    tif = intface(grid, ws["ti"], 1, _intface_method(grid))
+    gradTi_r = ws.get("gradTi_r")
+    if gradTi_r is None:
+        gradTi_r = grad_r_us(grid, 1, ws["ti"], funv)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        e_neo = tif / np.maximum(nf_main, 1e-30) * grad_n_main + gradTi_r * k_t - uaf_B_mean
+    return np.nan_to_num(e_neo, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+def _ft_conn(grid) -> np.ndarray:
+    """Flux-tube connection length (MATLAB gmtry.ftConn)."""
+    cached = getattr(grid, "_ft_conn_cache", None)
+    if cached is not None:
+        return cached
+    ft_fc_p = grid.ft_fc_p
+    ft_fc = grid.ft_fc
+    n_ft = ft_fc_p.shape[0]
+    out = np.zeros(n_ft)
+    if grid.fc_hc is not None and grid.fc_bb is not None:
+        fc_hc = grid.fc_hc
+        fc_bb = grid.fc_bb
+        for i_ft in range(n_ft):
+            start = ft_fc_p[i_ft, 0] - 1  # MATLAB 1-based pointer
+            for k in range(ft_fc_p[i_ft, 1]):
+                i_fc = ft_fc[start + k]
+                out[i_ft] += (fc_hc[i_fc, 0] + fc_hc[i_fc, 1]) * fc_bb[i_fc, 3] / max(fc_bb[i_fc, 0], 1e-30)
+            if ft_fc_p[i_ft, 1] == 0 and grid.ft_cv_p is not None and grid.ft_cv is not None and grid.cv_bb is not None:
+                # boundary flux tubes without faces: use first face of each cell
+                cvs = grid.ft_cv[grid.ft_cv_p[i_ft, 0] - 1:grid.ft_cv_p[i_ft, 0] - 1 + grid.ft_cv_p[i_ft, 1]]
+                for i_cv in cvs:
+                    if grid.cv_fc_p is not None and grid.cv_fc is not None:
+                        i_fc0 = grid.cv_fc[grid.cv_fc_p[i_cv, 0]]
+                        out[i_ft] += grid.fc_ht[i_fc0] * grid.cv_bb[i_cv, 3] / max(grid.cv_bb[i_cv, 0], 1e-30)
+    grid._ft_conn_cache = out
+    return out
+
+
+def _ft_vol(grid) -> np.ndarray:
+    """Flux-tube volume (MATLAB gmtry.ftVol)."""
+    cached = getattr(grid, "_ft_vol_cache", None)
+    if cached is not None:
+        return cached
+    ft_cv_p = grid.ft_cv_p
+    ft_cv = grid.ft_cv
+    n_ft = ft_cv_p.shape[0]
+    out = np.zeros(n_ft)
+    if grid.cv_vol is not None:
+        for i_ft in range(n_ft):
+            start = ft_cv_p[i_ft, 0] - 1  # MATLAB 1-based pointer
+            cvs = ft_cv[start:start + ft_cv_p[i_ft, 1]]
+            out[i_ft] = grid.cv_vol[cvs].sum()
+    grid._ft_vol_cache = out
+    return out
+
+
+# ──────────────────────────────────────────────────────────────
+# Integral heat sources along flux tubes (lines 1636-1753)
+# ──────────────────────────────────────────────────────────────
+
+def _ft_source_integrals(watch, grid, comp) -> dict:
+    """Integrate heat sources along divertor flux tubes.
+
+    Port of calc_additional.m lines 1636-1753: sources from the
+    midplane-top point to the target (top_tar) and at the divertor
+    entrance (entr_tar).
+    """
+    cached = getattr(watch, "_ft_source_integrals", None)
+    if cached is not None:
+        return cached
+
+    ws = _ws(watch)
+    watch.compute_regions()
+
+    # divergences of electron/ion heat flux components (lines 1637-1640)
+    div_fhe_grad_te_r = div_us(grid, np.column_stack([np.zeros(grid.n_faces), ws["fhe_cond_r"]]))
+    div_fhe_rest_r = div_us(grid, np.column_stack([np.zeros(grid.n_faces), ws["fhe_mdf_r"] - ws["fhe_cond_r"]]))
+    div_fhi_grad_te_r = div_us(grid, np.column_stack([np.zeros(grid.n_faces), ws["fhi_cond_r"]]))
+    div_fhi_rest_r = div_us(grid, np.column_stack([np.zeros(grid.n_faces), ws["fhi_mdf_r"] - ws["fhi_cond_r"]]))
+    div_fhe_mdf_th = div_us(grid, np.column_stack([ws["fhe_mdf_th"], np.zeros(grid.n_faces)]))
+    div_fhi_mdf_th = div_us(grid, np.column_stack([ws["fhi_mdf_th"], np.zeros(grid.n_faces)]))
+
+    # flux tubes in the SOL of the outer divertor (line 1642)
+    cv_outer_tar = grid.cv_outer_tar
+    cv_ft = grid.cv_ft
+    if cv_outer_tar is None or len(cv_outer_tar) == 0:
+        watch._ft_source_integrals = {}
+        return {}
+    fts = np.unique(cv_ft[cv_outer_tar])
+    fts = fts[fts != 0].astype(int)
+
+    n_ft = grid.ft_cv_p.shape[0]
+    names_she = ["She_top_tar_ft", "She_fr_top_tar_ft", "She_ei_top_tar_ft",
+                 "She_dd_top_tar_ft", "She_du_top_tar_ft", "She_BC_top_tar_ft",
+                 "She_eir_top_tar_ft", "She_rad_top_tar_ft",
+                 "Div_fhe_gradte_r_top_tar_ft", "Div_fhe_rest_r_top_tar_ft",
+                 "Div_fhe_mdf_th_top_tar_ft"]
+    names_shi = ["Shi_top_tar_ft", "Shi_fr_top_tar_ft", "Shi_dd_top_tar_ft",
+                 "Shi_du_top_tar_ft", "Shi_BC_top_tar_ft", "Shi_eir_top_tar_ft",
+                 "Shi_rad_top_tar_ft", "Shi_vis_top_tar_ft",
+                 "Div_fhi_gradte_r_top_tar_ft", "Div_fhi_rest_r_top_tar_ft",
+                 "Div_fhi_mdf_th_top_tar_ft"]
+    names_she_e = ["She_entr_tar_ft", "She_fr_entr_tar_ft", "She_ei_entr_tar_ft",
+                   "She_dd_entr_tar_ft", "She_du_entr_tar_ft", "She_BC_entr_tar_ft",
+                   "She_eir_entr_tar_ft", "She_rad_entr_tar_ft",
+                   "Div_fhe_gradte_r_entr_tar_ft", "Div_fhe_rest_r_entr_tar_ft",
+                   "Div_fhe_mdf_th_entr_tar_ft"]
+    names_shi_e = ["Shi_entr_tar_ft", "Shi_fr_entr_tar_ft", "Shi_dd_entr_tar_ft",
+                   "Shi_du_entr_tar_ft", "Shi_BC_entr_tar_ft", "Shi_eir_entr_tar_ft",
+                   "Shi_rad_entr_tar_ft", "Shi_vis_entr_tar_ft",
+                   "Div_fhi_gradte_r_entr_tar_ft", "Div_fhi_rest_r_entr_tar_ft",
+                   "Div_fhi_mdf_th_entr_tar_ft"]
+
+    out = {name: np.zeros(n_ft) for name in names_she + names_shi + names_she_e + names_shi_e}
+    out["vol_top_tar_ft"] = np.zeros(n_ft)
+    out["vol_entr_tar_ft"] = np.zeros(n_ft)
+
+    ft_cv_p = grid.ft_cv_p
+    ft_cv = grid.ft_cv
+    cv_reg = grid.cv_reg
+    cv_vol = grid.cv_vol
+    cv_y = grid.cv_y if grid.cv_y is not None else np.zeros(grid.n_cells)
+
+    def _she_terms(cvs):
+        def _g(name, n=grid.n_cells):
+            v = ws.get(name)
+            return v if v is not None else np.zeros(n)
+        return {
+            "She": ws["she"][cvs].sum(),
+            "She_fr": _g("she_fr")[cvs].sum(),
+            "She_ei": _g("she_ei")[cvs].sum(),
+            "She_dd": _g("she_dd")[cvs].sum(),
+            "She_du": _g("she_du")[cvs].sum(),
+            "She_BC": _g("she_BC")[cvs].sum(),
+            "She_eir": _g("she_eir")[cvs].sum(),
+            "She_rad": _g("she_rad")[cvs].sum(),
+            "Div_fhe_gradte_r": div_fhe_grad_te_r[cvs].sum(),
+            "Div_fhe_rest_r": div_fhe_rest_r[cvs].sum(),
+            "Div_fhe_mdf_th": div_fhe_mdf_th[cvs].sum(),
+        }
+
+    def _shi_terms(cvs):
+        def _g(name, n=grid.n_cells):
+            v = ws.get(name)
+            return v if v is not None else np.zeros(n)
+        return {
+            "Shi": ws["shi"][cvs].sum(),
+            "Shi_fr": _g("shi_fr")[cvs].sum(),
+            "Shi_dd": _g("shi_dd")[cvs].sum(),
+            "Shi_du": _g("shi_du")[cvs].sum(),
+            "Shi_BC": _g("shi_BC")[cvs].sum(),
+            "Shi_eir": _g("shi_eir")[cvs].sum(),
+            "Shi_rad": _g("shi_rad")[cvs].sum(),
+            "Shi_vis": _g("shi_viscl")[cvs].sum() + _g("shi_visan")[cvs].sum(),
+            "Div_fhi_gradte_r": div_fhi_grad_te_r[cvs].sum(),
+            "Div_fhi_rest_r": div_fhi_rest_r[cvs].sum(),
+            "Div_fhi_mdf_th": div_fhi_mdf_th[cvs].sum(),
+        }
+
+    for i_ft in fts:
+        if i_ft >= n_ft:
+            continue
+        start = ft_cv_p[i_ft, 0] - 1  # MATLAB 1-based pointer
+        cvs = ft_cv[start:start + ft_cv_p[i_ft, 1]]
+        if cvs.size == 0:
+            continue
+
+        # top_tar: sort by poloidal angle (cvY), keep from top point
+        order = np.argsort(cv_y[cvs])
+        cvs_sorted = cvs[order]
+        top_pos = np.argmax(cv_y[cvs_sorted])
+        cvs_top = cvs_sorted[top_pos:]
+        out["vol_top_tar_ft"][i_ft] = cv_vol[cvs_top].sum()
+        for k, v in _she_terms(cvs_top).items():
+            out[f"{k}_top_tar_ft"][i_ft] = v
+        for k, v in _shi_terms(cvs_top).items():
+            out[f"{k}_top_tar_ft"][i_ft] = v
+
+        # entr_tar: cells with mod(cvReg,4) == 0 (divertor entrance)
+        cvs_entr = cvs[np.mod(cv_reg[cvs], 4) == 0]
+        out["vol_entr_tar_ft"][i_ft] = cv_vol[cvs_entr].sum()
+        for k, v in _she_terms(cvs_entr).items():
+            out[f"{k}_entr_tar_ft"][i_ft] = v
+        for k, v in _shi_terms(cvs_entr).items():
+            out[f"{k}_entr_tar_ft"][i_ft] = v
+
+    watch._ft_source_integrals = out
+    return out
+
+
+def _ftsrc_get(watch, grid, comp, name: str) -> np.ndarray:
+    return _ft_source_integrals(watch, grid, comp).get(name, np.zeros(0))
+
+
+@quantity(
+    name="She_top_tar_ft",
+    requires=[],
+    description="electron heat source along flux tube (top→target)",
+    unit="W",
+)
+def calc_She_top_tar_ft(watch=None, grid=None, comp=None, **kw):
+    return _ftsrc_get(watch, grid, comp, "She_top_tar_ft")
+
+
+@quantity(
+    name="Shi_top_tar_ft",
+    requires=[],
+    description="ion heat source along flux tube (top→target)",
+    unit="W",
+)
+def calc_Shi_top_tar_ft(watch=None, grid=None, comp=None, **kw):
+    return _ftsrc_get(watch, grid, comp, "Shi_top_tar_ft")
+
+
+@quantity(
+    name="She_entr_tar_ft",
+    requires=[],
+    description="electron heat source at divertor entrance",
+    unit="W",
+)
+def calc_She_entr_tar_ft(watch=None, grid=None, comp=None, **kw):
+    return _ftsrc_get(watch, grid, comp, "She_entr_tar_ft")
+
+
+@quantity(
+    name="Shi_entr_tar_ft",
+    requires=[],
+    description="ion heat source at divertor entrance",
+    unit="W",
+)
+def calc_Shi_entr_tar_ft(watch=None, grid=None, comp=None, **kw):
+    return _ftsrc_get(watch, grid, comp, "Shi_entr_tar_ft")
+
 @quantity(
     name="smo_vis_tot",
     requires=[],
