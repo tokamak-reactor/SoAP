@@ -21,6 +21,7 @@ from solps_analysis.io.b2fstate_reader import (
     extract_state_arrays,
     get_plasma_composition,
 )
+from solps_analysis.io.variable_catalog import _catalog_transform
 
 
 @dataclass
@@ -202,7 +203,10 @@ class SolpsWatch:
                     pass
 
     def _read_dat_file(self, file_path: str) -> np.ndarray:
-        """Read a .dat file and convert to 1D if structured grid."""
+        """Read a .dat file and convert to 1D if structured grid.
+
+        Uses the variable catalog to decide cell vs face transformation.
+        """
         values = read_watch_file(file_path)
 
         # Convert 2D → 1D for structured grids
@@ -210,11 +214,44 @@ class SolpsWatch:
             ny, nx = values.shape
             ey, ex = self.grid.ny + 2, self.grid.nx + 2
             if ny == ey and nx == ex:
-                values = self._structured_to_unstructured(values)
+                # Determine transform: cell (default) or face (dim 1/2)
+                transform = _catalog_transform(file_path)
+                if transform == "face_x":
+                    values = self._structured_to_faces(values, dim=1)
+                elif transform == "face_y":
+                    values = self._structured_to_faces(values, dim=2)
+                else:
+                    values = self._structured_to_unstructured(values)
             elif ny == ex and nx == ey:
-                values = self._structured_to_unstructured(values.T)
+                transform = _catalog_transform(file_path)
+                if transform == "face_x":
+                    values = self._structured_to_faces(values.T, dim=1)
+                elif transform == "face_y":
+                    values = self._structured_to_faces(values.T, dim=2)
+                else:
+                    values = self._structured_to_unstructured(values.T)
 
         return np.ascontiguousarray(values, dtype=np.float64)
+
+    def _structured_to_faces(self, data_2d: np.ndarray, dim: int = 1) -> np.ndarray:
+        """Convert structured 2D (ny+2, nx+2) to 1D face data.
+
+        dim=1 → x-faces via imap_fcx (west faces)
+        dim=2 → y-faces via imap_fcy (bottom faces)
+        MATLAB equivalent: st_us_transform_fc(input, dim).
+        """
+        n_faces = self.grid.n_faces
+        result = np.zeros(n_faces, dtype=np.float64)
+        if dim == 1:
+            imap = self.grid.imap_fcx
+        else:
+            imap = self.grid.imap_fcy
+        if imap is None:
+            return result
+        mask = imap > 0
+        # data_2d is (ny+2, nx+2); imap is (nx+2, ny+2); MATLAB indexes var(iy,ix)
+        result[imap[mask].astype(np.intp) - 1] = data_2d.T[mask]
+        return result
 
     def _structured_to_unstructured(self, data_2d: np.ndarray) -> np.ndarray:
         """Convert structured 2D to unstructured 1D via imap_cv — vectorized."""
