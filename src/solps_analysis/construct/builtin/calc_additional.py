@@ -2824,6 +2824,401 @@ def calc_po_fl_wall(watch=None, grid=None, comp=None, **kw):
 def calc_fh_sum(watch=None, grid=None, comp=None, **kw):
     return _wall_get(watch, grid, comp, "fh_sum")
 
+
+# ──────────────────────────────────────────────────────────────
+# Species totals, separatrix/pedestal quantities, compression,
+# enrichment (lines 1117-1341)
+# ──────────────────────────────────────────────────────────────
+
+def _sep_quantities(watch, grid, comp) -> dict:
+    """Separatrix/pedestal parameters + compression/enrichment.
+
+    Port of calc_additional.m lines 1117-1341.
+    """
+    cached = getattr(watch, "_sep_quantities", None)
+    if cached is not None:
+        return cached
+
+    ws = _ws(watch)
+    watch.compute_regions()
+    ns = ws["na"].shape[1]
+    nsorts = comp.n_elements if comp is not None else 1
+    indices = comp.element_indices_list if comp is not None else [list(range(ns))]
+    zs = _zs(comp)
+    ams = None
+    if comp is not None:
+        am = getattr(comp, "am", None)
+        if am is not None:
+            ams = np.asarray(am, dtype=np.float64)
+    n_ci = grid.n_core_cells
+    cv_vol = grid.cv_vol
+    fc_s = grid.fc_s if grid.fc_s is not None else np.ones(grid.n_faces)
+    fc_hc = grid.fc_hc if grid.fc_hc is not None else np.ones((grid.n_faces, 2))
+    fc_cv = grid.fc_cv
+    cv_reg = grid.cv_reg
+
+    # ni / rho / p_ch / cs / csi (lines 1118-1140)
+    ni = np.zeros((grid.n_cells, 2))
+    rho = np.zeros(grid.n_cells)
+    for is_ in range(ns):
+        if zs is not None and zs[is_] != 0:
+            ni[:, 1] += ws["na"][:, is_]
+            if ams is not None:
+                rho += ws["na"][:, is_] * ams[is_] * MP
+        else:
+            ni[:, 0] += ws["na"][:, is_]
+    ni[:, 0] += ni[:, 1]
+    p_ch = ws["ne"] * ws["te"] * QE + ni[:, 1] * ws["ti"] * QE
+    with np.errstate(divide="ignore", invalid="ignore"):
+        cs = np.sqrt(p_ch / np.maximum(rho, 1e-30))
+        csi = np.sqrt(ni[:, 1] * ws["ti"] * QE / np.maximum(rho, 1e-30))
+    cs = np.nan_to_num(cs, nan=0.0, posinf=0.0)
+    csi = np.nan_to_num(csi, nan=0.0, posinf=0.0)
+
+    # Zavg per element (lines 1142-1150)
+    Zavg = np.zeros((grid.n_cells, nsorts))
+    for ia in range(nsorts):
+        tmp = indices[ia]
+        num = np.zeros(grid.n_cells)
+        den = np.zeros(grid.n_cells)
+        for is_ in tmp[1:]:
+            num += zs[is_] * ws["na"][:, is_]
+            den += ws["na"][:, is_]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            Zavg[:, ia] = num / np.maximum(den, 1e-30)
+    Zavg = np.nan_to_num(Zavg, nan=0.0)
+
+    sep_fcs = grid.core_sep_fcs
+    if sep_fcs is None or len(sep_fcs) == 0:
+        watch._sep_quantities = {}
+        return {}
+
+    # te_sep / ti_sep (lines 1189-1198): hc-weighted interpolation × fcS
+    te_sep = 0.0
+    ti_sep = 0.0
+    for i_fc in sep_fcs:
+        i_cvs = fc_cv[i_fc]
+        hc1, hc2 = fc_hc[i_fc]
+        w = hc1 + hc2
+        te_sep += (ws["te"][i_cvs[0]] * hc2 + ws["te"][i_cvs[1]] * hc1) / w * fc_s[i_fc]
+        ti_sep += (ws["ti"][i_cvs[0]] * hc2 + ws["ti"][i_cvs[1]] * hc1) / w * fc_s[i_fc]
+    sum_fcS = fc_s[sep_fcs].sum()
+    te_sep /= sum_fcS
+    ti_sep /= sum_fcS
+
+    # ped_fcs: core boundary faces (fcLbl == -21 | -25)
+    ped_fcs = np.where((grid.fc_lbl == -21) | (grid.fc_lbl == -25))[0] if grid.fc_lbl is not None else np.array([], dtype=int)
+
+    # particle inventory (lines 1200-1232)
+    N_tot_B25 = np.zeros(nsorts)
+    N_sorts_by_Reg = np.zeros((cv_reg.max(), nsorts))
+    volReg = np.zeros(cv_reg.max())
+    N_core = np.zeros(nsorts)
+    N_in_div = np.zeros(nsorts)
+    N_out_div = np.zeros(nsorts)
+    pa = np.zeros((grid.n_cells, nsorts))
+    uaAv = np.zeros((grid.n_cells, nsorts))
+    n_in_div_avr = np.zeros(nsorts)
+    n_out_div_avr = np.zeros(nsorts)
+
+    for ia in range(nsorts):
+        is_list = indices[ia]
+        N_tot_B25[ia] = (ws["na"][:n_ci, is_list].sum(axis=1) * cv_vol[:n_ci]).sum()
+        for i_reg in range(1, cv_reg.max() + 1):
+            reg_cvs = np.where(cv_reg == i_reg)[0]
+            reg_cvs = reg_cvs[reg_cvs < n_ci]
+            if reg_cvs.size == 0:
+                continue
+            volReg[i_reg - 1] = cv_vol[reg_cvs].sum()
+            N_sorts_by_Reg[i_reg - 1, ia] = (ws["na"][np.ix_(reg_cvs, is_list)].sum(axis=1) * cv_vol[reg_cvs]).sum()
+
+        pa[:, ia] = (ws["na"][:, is_list] * zs[is_list][None, :] * ws["te"][:, None]
+                     + ws["na"][:, is_list[1:]].sum(axis=1)[:, None] * ws["ti"][:, None]).sum(axis=1) * QE \
+            if len(is_list) > 1 else ws["na"][:, is_list].sum(axis=1) * zs[is_list[0]] * ws["te"] * QE
+        naua = ws["na"] * ws["ua"]
+        uaAv[:, ia] = (naua[:, is_list[1:]].sum(axis=1)
+                       / np.maximum(ws["na"][:, is_list[1:]].sum(axis=1), 1e-30)) \
+            if len(is_list) > 1 else np.zeros(grid.n_cells)
+        N_core[ia] = N_sorts_by_Reg[np.mod(np.arange(1, cv_reg.max() + 1), 4) == 1, ia].sum()
+
+        in_str_cvs = grid.cv_inner_tar
+        out_str_cvs = grid.cv_outer_tar
+        if in_str_cvs is not None and len(in_str_cvs):
+            in_reg = np.unique(cv_reg[in_str_cvs])[0]
+            N_in_div[ia] = N_sorts_by_Reg[in_reg - 1, ia] if in_reg - 1 < N_sorts_by_Reg.shape[0] else 0.0
+            n_in_div_avr[ia] = N_in_div[ia] / max(volReg[in_reg - 1], 1e-30)
+        if out_str_cvs is not None and len(out_str_cvs):
+            out_reg = np.unique(cv_reg[out_str_cvs])[0]
+            N_out_div[ia] = N_sorts_by_Reg[out_reg - 1, ia] if out_reg - 1 < N_sorts_by_Reg.shape[0] else 0.0
+            n_out_div_avr[ia] = N_out_div[ia] / max(volReg[out_reg - 1], 1e-30)
+
+    # separatrix densities (lines 1234-1255)
+    n_sep = np.zeros(nsorts)
+    n_sep_Kuk = np.zeros(nsorts)
+    ne_sep = 0.0
+    ne_sep_Kuk = 0.0
+    for i_fc in sep_fcs:
+        i_cvs = fc_cv[i_fc]
+        hc1, hc2 = fc_hc[i_fc]
+        w = hc1 + hc2
+        lcfs_cv = i_cvs[np.mod(cv_reg[i_cvs], 4) != 1]
+        for ia in range(nsorts):
+            is_list = np.asarray(indices[ia], dtype=np.intp)
+            na_tmp = ws["na"][np.ix_(i_cvs, is_list)].sum(axis=1)
+            na_int = (na_tmp[0] * hc2 + na_tmp[1] * hc1) / w
+            n_sep[ia] += na_int * fc_s[i_fc]
+            if lcfs_cv.size:
+                n_sep_Kuk[ia] += ws["na"][np.ix_(lcfs_cv, is_list)].sum() * fc_s[i_fc]
+        ne_int = (ws["ne"][i_cvs[0]] * hc2 + ws["ne"][i_cvs[1]] * hc1) / w
+        ne_sep += ne_int * fc_s[i_fc]
+        ne_sep_Kuk += ws["ne"][lcfs_cv].sum() * fc_s[i_fc] if lcfs_cv.size else 0.0
+    n_sep /= sum_fcS
+    n_sep_Kuk /= sum_fcS
+    ne_sep /= sum_fcS
+    ne_sep_Kuk /= sum_fcS
+
+    # pedestal densities (lines 1257-1282)
+    n_ped = np.zeros(nsorts)
+    n_ped_Kuk = np.zeros(nsorts)
+    ne_ped = 0.0
+    ne_ped_Kuk = 0.0
+    p_ped_Kuk = np.zeros(nsorts)
+    omp = grid.outer_midplane_cells
+    cei_ft = grid.cv_ft[omp[1]] if (omp is not None and len(omp) > 1 and grid.cv_ft is not None) else None
+    cei_cvs = np.array([], dtype=int)
+    if cei_ft is not None and grid.ft_cv is not None and grid.ft_cv_p is not None:
+        i_ft = int(cei_ft)
+        if 0 <= i_ft < grid.ft_cv_p.shape[0]:
+            cei_cvs = grid.ft_cv[grid.ft_cv_p[i_ft, 0]:grid.ft_cv_p[i_ft, 0] + grid.ft_cv_p[i_ft, 1]]
+
+    sum_ped_fcS = fc_s[ped_fcs].sum() if len(ped_fcs) else 1.0
+    for k, i_fc in enumerate(ped_fcs):
+        i_cvs = fc_cv[i_fc]
+        hc1, hc2 = fc_hc[i_fc]
+        w = hc1 + hc2
+        for ia in range(nsorts):
+            is_list = np.asarray(indices[ia], dtype=np.intp)
+            na_tmp = ws["na"][np.ix_(i_cvs, is_list)].sum(axis=1)
+            na_int = (na_tmp[0] * hc2 + na_tmp[1] * hc1) / w
+            n_ped[ia] += na_int * fc_s[i_fc]
+        ne_int = (ws["ne"][i_cvs[0]] * hc2 + ws["ne"][i_cvs[1]] * hc1) / w
+        ne_ped += ne_int * fc_s[i_fc]
+    n_ped /= sum_ped_fcS
+    ne_ped /= sum_ped_fcS
+
+    if len(cei_cvs):
+        for ia in range(nsorts):
+            is_list = np.asarray(indices[ia], dtype=np.intp)
+            n_ped_Kuk[ia] = (ws["na"][np.ix_(cei_cvs, is_list)].sum(axis=1) * fc_s[ped_fcs]).sum() / sum_ped_fcS \
+                if len(ped_fcs) else 0.0
+            p_ped_Kuk[ia] = (pa[cei_cvs, ia] * fc_s[ped_fcs]).sum() / sum_ped_fcS \
+                if len(ped_fcs) else 0.0
+        ne_ped_Kuk = (ws["ne"][cei_cvs] * fc_s[ped_fcs]).sum() / sum_ped_fcS if len(ped_fcs) else 0.0
+
+    # concentrations (lines 1285-1290)
+    n_e_sep = n_sep / max(ne_sep, 1e-30)
+    n_D_sep = n_sep / max(n_sep[0], 1e-30) if nsorts else n_sep
+    n_e_ped = n_ped / max(ne_ped, 1e-30)
+    n_D_ped = n_ped / max(n_ped[0], 1e-30) if nsorts else n_ped
+
+    # compression / enrichment (lines 1292-1317)
+    Compr_indiv_sep = n_in_div_avr / np.maximum(n_sep, 1e-30)
+    Compr_outdiv_sep = n_out_div_avr / np.maximum(n_sep, 1e-30)
+    Compr_indiv_ped = n_in_div_avr / np.maximum(n_ped, 1e-30)
+    Compr_outdiv_ped = n_out_div_avr / np.maximum(n_ped, 1e-30)
+    in_reg0 = np.unique(cv_reg[grid.cv_inner_tar])[0] if grid.cv_inner_tar is not None and len(grid.cv_inner_tar) else 1
+    out_reg0 = np.unique(cv_reg[grid.cv_outer_tar])[0] if grid.cv_outer_tar is not None and len(grid.cv_outer_tar) else 2
+    v_div = volReg[in_reg0 - 1] + volReg[out_reg0 - 1] if in_reg0 <= volReg.size and out_reg0 <= volReg.size else 1.0
+    Compr_div_sep = (N_in_div + N_out_div) / np.maximum(n_sep, 1e-30) / max(v_div, 1e-30)
+    Compr_div_ped = (N_in_div + N_out_div) / np.maximum(n_ped, 1e-30) / max(v_div, 1e-30)
+    Compr_indiv_sep_Kuk = n_in_div_avr / np.maximum(n_sep_Kuk, 1e-30)
+    Compr_outdiv_sep_Kuk = n_out_div_avr / np.maximum(n_sep_Kuk, 1e-30)
+    Compr_indiv_ped_Kuk = n_in_div_avr / np.maximum(n_ped_Kuk, 1e-30)
+    Compr_outdiv_ped_Kuk = n_out_div_avr / np.maximum(n_ped_Kuk, 1e-30)
+    Compr_div_sep_Kuk = (N_in_div + N_out_div) / np.maximum(n_sep_Kuk, 1e-30) / max(v_div, 1e-30)
+    Compr_div_ped_Kuk = (N_in_div + N_out_div) / np.maximum(n_ped_Kuk, 1e-30) / max(v_div, 1e-30)
+
+    Enrich_indiv_sep = Compr_indiv_sep / max(Compr_indiv_sep[0], 1e-30)
+    Enrich_outdiv_sep = Compr_outdiv_sep / max(Compr_outdiv_sep[0], 1e-30)
+    Enrich_div_sep = Compr_div_sep / max(Compr_div_sep[0], 1e-30)
+
+    out = {
+        "ni": ni, "rho": rho, "p_ch": p_ch, "cs": cs, "csi": csi, "Zavg": Zavg,
+        "pa": pa, "uaAv": uaAv,
+        "te_sep": te_sep, "ti_sep": ti_sep,
+        "n_sep": n_sep, "n_sep_Kuk": n_sep_Kuk, "ne_sep": ne_sep, "ne_sep_Kuk": ne_sep_Kuk,
+        "n_ped": n_ped, "n_ped_Kuk": n_ped_Kuk, "ne_ped": ne_ped, "ne_ped_Kuk": ne_ped_Kuk,
+        "p_ped_Kuk": p_ped_Kuk,
+        "n_e_sep": n_e_sep, "n_D_sep": n_D_sep, "n_e_ped": n_e_ped, "n_D_ped": n_D_ped,
+        "N_tot_B25": N_tot_B25, "N_sorts_by_Reg": N_sorts_by_Reg, "volReg": volReg,
+        "N_core": N_core, "N_in_div": N_in_div, "N_out_div": N_out_div,
+        "n_in_div_avr": n_in_div_avr, "n_out_div_avr": n_out_div_avr,
+        "Compr_indiv_sep": Compr_indiv_sep, "Compr_outdiv_sep": Compr_outdiv_sep,
+        "Compr_indiv_ped": Compr_indiv_ped, "Compr_outdiv_ped": Compr_outdiv_ped,
+        "Compr_div_sep": Compr_div_sep, "Compr_div_ped": Compr_div_ped,
+        "Compr_indiv_sep_Kuk": Compr_indiv_sep_Kuk, "Compr_outdiv_sep_Kuk": Compr_outdiv_sep_Kuk,
+        "Compr_indiv_ped_Kuk": Compr_indiv_ped_Kuk, "Compr_outdiv_ped_Kuk": Compr_outdiv_ped_Kuk,
+        "Compr_div_sep_Kuk": Compr_div_sep_Kuk, "Compr_div_ped_Kuk": Compr_div_ped_Kuk,
+        "Enrich_indiv_sep": Enrich_indiv_sep, "Enrich_outdiv_sep": Enrich_outdiv_sep,
+        "Enrich_div_sep": Enrich_div_sep,
+    }
+    watch._sep_quantities = out
+    return out
+
+
+def _sep_get(watch, grid, comp, name: str) -> np.ndarray:
+    return _sep_quantities(watch, grid, comp).get(name, np.zeros(0))
+
+
+@quantity(
+    name="ni",
+    requires=[],
+    description="ion+atom / ion density (2 columns)",
+    unit="m⁻³",
+)
+def calc_ni(watch=None, grid=None, comp=None, **kw):
+    return _sep_get(watch, grid, comp, "ni")
+
+
+@quantity(
+    name="rho",
+    requires=[],
+    description="mass density of charged particles",
+    unit="kg/m³",
+)
+def calc_rho(watch=None, grid=None, comp=None, **kw):
+    return _sep_get(watch, grid, comp, "rho")
+
+
+@quantity(
+    name="p_ch",
+    requires=[],
+    description="pressure of charged particles",
+    unit="Pa",
+)
+def calc_p_ch(watch=None, grid=None, comp=None, **kw):
+    return _sep_get(watch, grid, comp, "p_ch")
+
+
+@quantity(
+    name="cs",
+    requires=[],
+    description="sound speed",
+    unit="m/s",
+)
+def calc_cs(watch=None, grid=None, comp=None, **kw):
+    return _sep_get(watch, grid, comp, "cs")
+
+
+@quantity(
+    name="Zavg",
+    requires=[],
+    description="average charge per element",
+    unit="",
+)
+def calc_Zavg(watch=None, grid=None, comp=None, **kw):
+    return _sep_get(watch, grid, comp, "Zavg")
+
+
+@quantity(
+    name="te_sep",
+    requires=[],
+    description="separatrix electron temperature (surface averaged)",
+    unit="eV",
+)
+def calc_te_sep(watch=None, grid=None, comp=None, **kw):
+    return np.array([_sep_get(watch, grid, comp, "te_sep")])
+
+
+@quantity(
+    name="ti_sep",
+    requires=[],
+    description="separatrix ion temperature (surface averaged)",
+    unit="eV",
+)
+def calc_ti_sep(watch=None, grid=None, comp=None, **kw):
+    return np.array([_sep_get(watch, grid, comp, "ti_sep")])
+
+
+@quantity(
+    name="n_sep",
+    requires=[],
+    description="separatrix density per element",
+    unit="m⁻³",
+)
+def calc_n_sep(watch=None, grid=None, comp=None, **kw):
+    return _sep_get(watch, grid, comp, "n_sep")
+
+
+@quantity(
+    name="n_e_sep",
+    requires=[],
+    description="separatrix concentration per element (rel. to ne)",
+    unit="",
+)
+def calc_n_e_sep(watch=None, grid=None, comp=None, **kw):
+    return _sep_get(watch, grid, comp, "n_e_sep")
+
+
+@quantity(
+    name="n_D_sep",
+    requires=[],
+    description="separatrix concentration per element (rel. to main ion)",
+    unit="",
+)
+def calc_n_D_sep(watch=None, grid=None, comp=None, **kw):
+    return _sep_get(watch, grid, comp, "n_D_sep")
+
+
+@quantity(
+    name="n_ped",
+    requires=[],
+    description="pedestal density per element",
+    unit="m⁻³",
+)
+def calc_n_ped(watch=None, grid=None, comp=None, **kw):
+    return _sep_get(watch, grid, comp, "n_ped")
+
+
+@quantity(
+    name="Compr_div_sep",
+    requires=[],
+    description="divertor compression at separatrix",
+    unit="",
+)
+def calc_Compr_div_sep(watch=None, grid=None, comp=None, **kw):
+    return _sep_get(watch, grid, comp, "Compr_div_sep")
+
+
+@quantity(
+    name="Compr_div_ped",
+    requires=[],
+    description="divertor compression at pedestal",
+    unit="",
+)
+def calc_Compr_div_ped(watch=None, grid=None, comp=None, **kw):
+    return _sep_get(watch, grid, comp, "Compr_div_ped")
+
+
+@quantity(
+    name="Enrich_div_sep",
+    requires=[],
+    description="divertor enrichment at separatrix",
+    unit="",
+)
+def calc_Enrich_div_sep(watch=None, grid=None, comp=None, **kw):
+    return _sep_get(watch, grid, comp, "Enrich_div_sep")
+
+
+@quantity(
+    name="N_tot_B25",
+    requires=[],
+    description="total nuclei per element in core",
+    unit="",
+)
+def calc_N_tot_B25(watch=None, grid=None, comp=None, **kw):
+    return _sep_get(watch, grid, comp, "N_tot_B25")
+
 @quantity(
     name="smo_vis_tot",
     requires=[],
