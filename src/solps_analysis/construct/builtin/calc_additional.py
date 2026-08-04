@@ -2061,6 +2061,215 @@ def calc_Fei(watch=None, grid=None, comp=None, **kw):
 def calc_Fet(watch=None, grid=None, comp=None, **kw):
     return _omp_get(watch, grid, comp, "Fet")
 
+
+# ──────────────────────────────────────────────────────────────
+# Shi/She flux-tube sources (lines 768-815)
+# ──────────────────────────────────────────────────────────────
+
+def _ft_integrals(watch, grid, comp) -> dict:
+    """Integrate heat sources along flux tubes crossing the midplane.
+
+    Port of calc_additional.m lines 768-815.
+    """
+    cached = getattr(watch, "_ft_integrals", None)
+    if cached is not None:
+        return cached
+
+    ws = _ws(watch)
+    watch.compute_regions()
+    omp = grid.outer_midplane_cells
+    if omp is None or len(omp) < 2:
+        watch._ft_integrals = {}
+        return {}
+
+    def _fc_coords(cells):
+        out = []
+        for k in range(1, len(cells)):
+            prev_fcs = grid.cv_fc[grid.cv_fc_p[cells[k-1], 0]:grid.cv_fc_p[cells[k-1], 0]+grid.cv_fc_p[cells[k-1], 1]]
+            cur_fcs = grid.cv_fc[grid.cv_fc_p[cells[k], 0]:grid.cv_fc_p[cells[k], 0]+grid.cv_fc_p[cells[k], 1]]
+            common = np.intersect1d(prev_fcs, cur_fcs)
+            if common.size:
+                out.append(common[0])
+        return np.array(out, dtype=np.intp)
+
+    fc_omp = _fc_coords(omp)
+    imp = grid.inner_midplane_cells
+    fc_imp = _fc_coords(imp) if imp is not None else np.array([], dtype=np.intp)
+    len_cs = len(omp)  # MATLAB uses length(outmidpl_coords)
+
+    # isCrossOutmidplCv: flux tube index → OMP position
+    ft_cv_p = grid.ft_cv_p
+    ft_cv = grid.ft_cv
+    n_ft = ft_cv_p.shape[0]
+    is_cross_out_cv = np.zeros(n_ft, dtype=int)
+    is_cross_in_cv = np.zeros(n_ft, dtype=int)
+    for i in range(n_ft):
+        cvs = ft_cv[ft_cv_p[i, 0]:ft_cv_p[i, 0] + ft_cv_p[i, 1]]
+        inter = np.intersect1d(cvs, omp)
+        if inter.size:
+            is_cross_out_cv[i] = np.where(omp == inter.min())[0][0] + 1
+        inter = np.intersect1d(cvs, imp) if imp is not None else np.array([], dtype=int)
+        if inter.size:
+            is_cross_in_cv[i] = np.where(imp == inter.min())[0][0] + 1
+
+    names = ["Shi", "Shi_vis", "Shi_eir", "Shi_du", "Shi_dd", "Shi_dd1",
+             "Shi_fr", "Shi_BC", "She", "She_ei", "She_eir", "She_du",
+             "She_dd", "She_fr", "She_BC", "She_rad"]
+    out = {name: np.zeros(len_cs) for name in names}
+
+    # shi_dd1 (line 768): ExB-driven ion heat source
+    zs = _zs(comp)
+    ions = np.where(zs is not None and np.asarray(zs) != 0)[0] if zs is not None else np.arange(ws["na"].shape[1])
+    vel_exb_th = ws["vel_ExB_th"]  # (nFc, ns)
+    vel_exb_r = ws["vel_ExB_r"]
+    fc_s = grid.fc_s if grid.fc_s is not None else np.ones(grid.n_faces)
+    fc_qalf = grid.fc_qalf if grid.fc_qalf is not None else np.ones((grid.n_faces, 2))
+    flow_th = vel_exb_th[:, 1] * fc_qalf[:, 0] * fc_s  # species 2 = main ion (0-based 1)
+    flow_r = vel_exb_r[:, 1] * fc_qalf[:, 1] * fc_s
+    div_vel = div_us(grid, np.column_stack([flow_th, flow_r]))
+    shi_dd1_cell = -ws["na"][:, ions].sum(axis=1) * ws["ti"] * QE * div_vel
+
+    cv_reg = grid.cv_reg
+    for i_ft in range(n_ft):
+        i_cs = is_cross_out_cv[i_ft]
+        if i_cs == 0:
+            i_cs = is_cross_in_cv[i_ft]
+        if i_cs == 0 or i_cs > len_cs:
+            continue
+        i_cs0 = i_cs - 1
+        cvs = ft_cv[ft_cv_p[i_ft, 0]:ft_cv_p[i_ft, 0] + ft_cv_p[i_ft, 1]]
+        for i_cv in cvs:
+            if np.mod(cv_reg[i_cv], 4) == 1 or np.mod(cv_reg[i_cv], 4) == 2:
+                out["Shi"][i_cs0] += ws["shi"][i_cv]
+                out["Shi_vis"][i_cs0] += ws.get("shi_viscl", 0)[i_cv] + ws.get("shi_visan", 0)[i_cv]
+                out["Shi_eir"][i_cs0] += ws.get("shi_eir", 0)[i_cv]
+                out["Shi_du"][i_cs0] += ws.get("shi_du", 0)[i_cv]
+                out["Shi_dd"][i_cs0] += ws.get("shi_dd", 0)[i_cv]
+                out["Shi_dd1"][i_cs0] += shi_dd1_cell[i_cv]
+                out["Shi_fr"][i_cs0] += ws.get("shi_fr", 0)[i_cv]
+                out["Shi_BC"][i_cs0] += ws.get("shi_BC", 0)[i_cv]
+                out["She"][i_cs0] += ws["she"][i_cv]
+                out["She_ei"][i_cs0] += ws.get("she_ei", 0)[i_cv]
+                out["She_eir"][i_cs0] += ws.get("she_eir", 0)[i_cv]
+                out["She_du"][i_cs0] += ws.get("she_du", 0)[i_cv]
+                out["She_dd"][i_cs0] += ws.get("she_dd", 0)[i_cv]
+                out["She_fr"][i_cs0] += ws.get("she_fr", 0)[i_cv]
+                out["She_BC"][i_cs0] += ws.get("she_BC", 0)[i_cv]
+                out["She_rad"][i_cs0] += ws.get("she_rad", 0)[i_cv]
+
+    watch._ft_integrals = out
+    return out
+
+
+def _ft_get(watch, grid, comp, name: str) -> np.ndarray:
+    d = _ft_integrals(watch, grid, comp)
+    return d.get(name, np.zeros(0))
+
+
+@quantity(
+    name="Shi",
+    requires=[],
+    description="flux-tube integrated ion heat source",
+    unit="W",
+)
+def calc_Shi(watch=None, grid=None, comp=None, **kw):
+    return _ft_get(watch, grid, comp, "Shi")
+
+
+@quantity(
+    name="She",
+    requires=[],
+    description="flux-tube integrated electron heat source",
+    unit="W",
+)
+def calc_She(watch=None, grid=None, comp=None, **kw):
+    return _ft_get(watch, grid, comp, "She")
+
+
+@quantity(
+    name="Shi_dd1",
+    requires=[],
+    description="flux-tube integrated ExB ion heat source",
+    unit="W",
+)
+def calc_Shi_dd1(watch=None, grid=None, comp=None, **kw):
+    return _ft_get(watch, grid, comp, "Shi_dd1")
+
+
+# ──────────────────────────────────────────────────────────────
+# Radiation (lines 821-859)
+# ──────────────────────────────────────────────────────────────
+
+@quantity(
+    name="Qrad",
+    requires=[],
+    description="radiation power loss per element (core)",
+    unit="W/m³",
+)
+def calc_Qrad(watch=None, grid=None, comp=None, **kw):
+    ws = _ws(watch)
+    if comp is None:
+        return np.zeros((grid.n_cells, 1))
+    nsorts = comp.n_elements
+    n_ci = grid.n_core_cells
+    indices = comp.element_indices_list
+    out = np.zeros((grid.n_cells, nsorts))
+    for ia in range(nsorts):
+        is_list = indices[ia]
+        q = np.zeros(grid.n_cells)
+        q[:n_ci] = (ws["she_radlin"][:n_ci, is_list].sum(axis=1)
+                    + ws["she_radbrm"][:n_ci, is_list].sum(axis=1))
+        neut = watch.neut
+        if neut is not None:
+            from solps_analysis.construct.builtin.eirene import _unpack_eirene_cell_data
+            eneutrad = neut.get("eneutrad")
+            if eneutrad is not None:
+                eneutrad_1d = _unpack_eirene_cell_data(np.asarray(eneutrad), grid)
+                if eneutrad_1d.ndim == 2 and eneutrad_1d.shape[1] > ia:
+                    q[:n_ci] = q[:n_ci] - eneutrad_1d[:n_ci, ia]
+            atm2mol = neut.get("atm2mol")
+            if atm2mol is not None and len(atm2mol) > ia and atm2mol[ia] != 0:
+                emolrad = neut.get("emolrad")
+                if emolrad is not None:
+                    emolrad_1d = _unpack_eirene_cell_data(np.asarray(emolrad), grid)
+                    if emolrad_1d.ndim == 2 and emolrad_1d.shape[1] > atm2mol[ia]:
+                        q[:n_ci] = q[:n_ci] - emolrad_1d[:n_ci, atm2mol[ia]]
+            atm2ion = neut.get("atm2ion")
+            if atm2ion is not None and len(atm2ion) > ia and atm2ion[ia] != 0:
+                eionrad = neut.get("eionrad")
+                if eionrad is not None:
+                    eionrad_1d = _unpack_eirene_cell_data(np.asarray(eionrad), grid)
+                    if eionrad_1d.ndim == 2 and eionrad_1d.shape[1] > atm2ion[ia]:
+                        q[:n_ci] = q[:n_ci] - eionrad_1d[:n_ci, atm2ion[ia]]
+        out[:, ia] = q
+    return out
+
+
+@quantity(
+    name="Qrad_tot",
+    requires=[],
+    description="total radiation power per element (core)",
+    unit="W",
+)
+def calc_Qrad_tot(watch=None, grid=None, comp=None, **kw):
+    q = _ws(watch).get("Qrad")
+    if q is None:
+        q = calc_Qrad(watch=watch, grid=grid, comp=comp)
+    return q.sum(axis=0)
+
+
+@quantity(
+    name="Qrad_tot_sum",
+    requires=[],
+    description="total radiation power (all elements)",
+    unit="W",
+)
+def calc_Qrad_tot_sum(watch=None, grid=None, comp=None, **kw):
+    q = _ws(watch).get("Qrad")
+    if q is None:
+        q = calc_Qrad(watch=watch, grid=grid, comp=comp)
+    return np.array([q.sum()])
+
 @quantity(
     name="smo_vis_tot",
     requires=[],

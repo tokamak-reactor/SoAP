@@ -307,6 +307,14 @@ class SolpsWatch:
                 self.b2_comp = build_b2_composition(fstate)
             except Exception:
                 pass
+
+        # Auto-load EIRENE data when fort.44/46 exist (needed for
+        # snas, Qrad, Shi/She etc.)
+        if self.neut is None and (self.path / "fort.44").exists():
+            try:
+                self._load_eirene_data()
+            except Exception:
+                pass
         if self.eirene_comp is None and self.neut is not None:
             try:
                 self.eirene_comp = build_eirene_composition(self.neut)
