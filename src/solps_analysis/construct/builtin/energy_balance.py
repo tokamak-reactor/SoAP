@@ -72,6 +72,7 @@ def _E_pot_ion(watch, comp) -> np.ndarray:
     requires=[],
     description="electron thermal energy density",
     unit="J",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_en_e(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -83,6 +84,7 @@ def calc_en_e(watch=None, grid=None, **kw):
     requires=[],
     description="ion thermal energy density",
     unit="J",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_en_i_int(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -98,6 +100,7 @@ def calc_en_i_int(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="ion kinetic energy density",
     unit="J",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_en_i_kin(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -120,6 +123,7 @@ def calc_en_i_kin(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="ionization potential energy density",
     unit="J",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_en_i_pot(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -132,6 +136,7 @@ def calc_en_i_pot(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="total energy density",
     unit="J",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_en(watch=None, grid=None, comp=None, **kw):
     return (calc_en_e(watch=watch, grid=grid)
@@ -150,6 +155,7 @@ def calc_en(watch=None, grid=None, comp=None, **kw):
     description="total electron energy flux, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_fee_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -186,6 +192,7 @@ def calc_fee_th(watch=None, grid=None, comp=None, **kw):
     description="total electron energy flux, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_fee_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -225,6 +232,7 @@ def calc_fee_r(watch=None, grid=None, comp=None, **kw):
     description="ion kinetic energy flux, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_fei_kin_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -242,6 +250,7 @@ def calc_fei_kin_th(watch=None, grid=None, comp=None, **kw):
     description="ion kinetic energy flux, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_fei_kin_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -259,6 +268,7 @@ def calc_fei_kin_r(watch=None, grid=None, comp=None, **kw):
     description="ion current energy flux, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_fei_curr_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -281,6 +291,7 @@ def calc_fei_curr_th(watch=None, grid=None, comp=None, **kw):
     description="ion current energy flux, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_fei_curr_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -303,6 +314,7 @@ def calc_fei_curr_r(watch=None, grid=None, comp=None, **kw):
     description="total ion energy flux, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_fei_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -328,6 +340,7 @@ def calc_fei_th(watch=None, grid=None, comp=None, **kw):
     description="total ion energy flux, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_fei_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -356,6 +369,7 @@ def calc_fei_r(watch=None, grid=None, comp=None, **kw):
     description="total energy flux, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_fet_th(watch=None, grid=None, comp=None, **kw):
     fee = ws_get(watch, "fee_th", grid, comp)
@@ -370,6 +384,7 @@ def calc_fet_th(watch=None, grid=None, comp=None, **kw):
     description="total energy flux, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_fet_r(watch=None, grid=None, comp=None, **kw):
     fee = ws_get(watch, "fee_r", grid, comp)
@@ -404,6 +419,7 @@ def ws_get(watch, name, grid, comp):
     requires=[],
     description="inelastic energy source",
     unit="W/m³",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_se_inel(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -416,6 +432,7 @@ def calc_se_inel(watch=None, grid=None, **kw):
     requires=[],
     description="electromagnetic energy source from Joule heating",
     unit="W/m³",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_se_EM_BzB(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -434,6 +451,7 @@ def calc_se_EM_BzB(watch=None, grid=None, **kw):
     requires=[],
     description="electromagnetic energy source (Lorentz-Kaveeva)",
     unit="W/m³",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_se_EM_LK(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -462,6 +480,7 @@ def calc_se_EM_LK(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="viscous energy source",
     unit="W/m³",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_se_vis(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -506,6 +525,7 @@ def calc_se_vis(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="viscous energy source (numerical)",
     unit="W/m³",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_se_vis_num(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -535,6 +555,7 @@ def calc_se_vis_num(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="kinetic energy source from continuity",
     unit="W/m³",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_se_Ekin_divGamma(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -553,6 +574,7 @@ def calc_se_Ekin_divGamma(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="kinetic energy source (mdf formulation)",
     unit="W/m³",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_se_Ekin_divGamma_mdf(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -571,6 +593,7 @@ def calc_se_Ekin_divGamma_mdf(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="centrifugal energy source",
     unit="W/m³",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_se_cf(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -582,6 +605,7 @@ def calc_se_cf(watch=None, grid=None, **kw):
     requires=[],
     description="divergence of kinetic energy flux",
     unit="W/m³",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_se_divEkinGamma(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -598,6 +622,7 @@ def calc_se_divEkinGamma(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="inertial energy source",
     unit="W/m³",
+    matlab_lines="energy_balance_Extended.m",
 )
 def calc_se_inert(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)

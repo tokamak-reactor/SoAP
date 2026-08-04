@@ -106,6 +106,7 @@ def list_quantities_info() -> list[dict]:
             "description": q.description,
             "unit": q.unit,
             "location": q.location,
+            "extra": q.extra,
         }
         for q in _QUANTITY_REGISTRY.values()
     ]

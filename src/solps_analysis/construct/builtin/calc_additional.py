@@ -35,6 +35,7 @@ def _intface_method(grid) -> str:
     description="Te interpolated to faces (intface)",
     unit="eV",
     location="face",
+    matlab_lines="calc_additional.m:355-370",
 )
 def calc_tef(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -47,6 +48,7 @@ def calc_tef(watch=None, grid=None, **kw):
     description="Ti interpolated to faces (intface)",
     unit="eV",
     location="face",
+    matlab_lines="calc_additional.m:355-370",
 )
 def calc_tif(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -59,6 +61,7 @@ def calc_tif(watch=None, grid=None, **kw):
     description="ne interpolated to faces (intface)",
     unit="m⁻³",
     location="face",
+    matlab_lines="calc_additional.m:355-370",
 )
 def calc_nef(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -71,6 +74,7 @@ def calc_nef(watch=None, grid=None, **kw):
     description="na (all species) interpolated to faces",
     unit="m⁻³",
     location="face",
+    matlab_lines="calc_additional.m:355-370",
 )
 def calc_naf(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -87,6 +91,7 @@ def calc_naf(watch=None, grid=None, **kw):
     description="ua (all species) interpolated to faces",
     unit="m/s",
     location="face",
+    matlab_lines="calc_additional.m:355-370",
 )
 def calc_uaf(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -103,6 +108,7 @@ def calc_uaf(watch=None, grid=None, **kw):
     description="ue interpolated to faces (intface)",
     unit="m/s",
     location="face",
+    matlab_lines="calc_additional.m:355-370",
 )
 def calc_uef(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -115,6 +121,7 @@ def calc_uef(watch=None, grid=None, **kw):
     description="po interpolated to faces (intface)",
     unit="V",
     location="face",
+    matlab_lines="calc_additional.m:355-370",
 )
 def calc_pof(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -127,6 +134,7 @@ def calc_pof(watch=None, grid=None, **kw):
     description="cvHz interpolated to faces",
     unit="m",
     location="face",
+    matlab_lines="calc_additional.m:355-370",
 )
 def calc_hzf(watch=None, grid=None, **kw):
     if grid.cv_hz is None:
@@ -175,6 +183,7 @@ def _div_r(grid, f_r: np.ndarray) -> np.ndarray:
     requires=[],
     description="div of total (mdf) particle flux per species",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fna_mdf(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -186,6 +195,7 @@ def calc_div_fna_mdf(watch=None, grid=None, **kw):
     requires=[],
     description="div of full particle flux per species",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fna(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -197,6 +207,7 @@ def calc_div_fna(watch=None, grid=None, **kw):
     requires=[],
     description="poloidal part of div(fna_mdf)",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fna_mdf_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -208,6 +219,7 @@ def calc_div_fna_mdf_th(watch=None, grid=None, **kw):
     requires=[],
     description="radial part of div(fna_mdf)",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fna_mdf_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -219,6 +231,7 @@ def calc_div_fna_mdf_r(watch=None, grid=None, **kw):
     requires=[],
     description="poloidal part of div(fna)",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fna_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -230,6 +243,7 @@ def calc_div_fna_th(watch=None, grid=None, **kw):
     requires=[],
     description="radial part of div(fna)",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fna_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -241,6 +255,7 @@ def calc_div_fna_r(watch=None, grid=None, **kw):
     requires=[],
     description="poloidal div of flow-flux",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fna_flo_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -252,6 +267,7 @@ def calc_div_fna_flo_th(watch=None, grid=None, **kw):
     requires=[],
     description="radial div of flow-flux",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fna_flo_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -263,6 +279,7 @@ def calc_div_fna_flo_r(watch=None, grid=None, **kw):
     requires=[],
     description="poloidal div of D∇n flux",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fna_Dgradn_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -274,6 +291,7 @@ def calc_div_fna_Dgradn_th(watch=None, grid=None, **kw):
     requires=[],
     description="radial div of D∇n flux",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fna_Dgradn_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -285,6 +303,7 @@ def calc_div_fna_Dgradn_r(watch=None, grid=None, **kw):
     requires=[],
     description="div of momentum flux",
     unit="Pa/m",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fmo(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -296,6 +315,7 @@ def calc_div_fmo(watch=None, grid=None, **kw):
     requires=[],
     description="poloidal div of momentum flux",
     unit="Pa/m",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fmo_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -307,6 +327,7 @@ def calc_div_fmo_th(watch=None, grid=None, **kw):
     requires=[],
     description="radial div of momentum flux",
     unit="Pa/m",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fmo_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -318,6 +339,7 @@ def calc_div_fmo_r(watch=None, grid=None, **kw):
     requires=[],
     description="div of momentum flow flux",
     unit="Pa/m",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fmo_flo(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -329,6 +351,7 @@ def calc_div_fmo_flo(watch=None, grid=None, **kw):
     requires=[],
     description="div of viscous momentum flux",
     unit="Pa/m",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fmo_vis(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -340,6 +363,7 @@ def calc_div_fmo_vis(watch=None, grid=None, **kw):
     requires=[],
     description="poloidal div of viscous momentum flux",
     unit="Pa/m",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fmo_vis_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -351,6 +375,7 @@ def calc_div_fmo_vis_th(watch=None, grid=None, **kw):
     requires=[],
     description="radial div of viscous momentum flux",
     unit="Pa/m",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fmo_vis_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -362,6 +387,7 @@ def calc_div_fmo_vis_r(watch=None, grid=None, **kw):
     requires=[],
     description="div of friction force flux (charged species only)",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:372-495",
 )
 def calc_div_fna_fha(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -377,6 +403,7 @@ def calc_div_fna_fha(watch=None, grid=None, **kw):
     requires=[],
     description="div of electron parallel velocity flux",
     unit="s⁻¹",
+    matlab_lines="calc_additional.m:481-495",
 )
 def calc_div_ue(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -390,6 +417,7 @@ def calc_div_ue(watch=None, grid=None, **kw):
     requires=[],
     description="div of total current density",
     unit="A/m³",
+    matlab_lines="calc_additional.m:481-495",
 )
 def calc_div_fch(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -401,6 +429,7 @@ def calc_div_fch(watch=None, grid=None, **kw):
     requires=[],
     description="poloidal div of current density",
     unit="A/m³",
+    matlab_lines="calc_additional.m:481-495",
 )
 def calc_div_fch_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -412,6 +441,7 @@ def calc_div_fch_th(watch=None, grid=None, **kw):
     requires=[],
     description="radial div of current density",
     unit="A/m³",
+    matlab_lines="calc_additional.m:481-495",
 )
 def calc_div_fch_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -423,6 +453,7 @@ def calc_div_fch_r(watch=None, grid=None, **kw):
     requires=[],
     description="div of ion heat flux (B2 5.0 formulation)",
     unit="W/m³",
+    matlab_lines="calc_additional.m:481-495",
 )
 def calc_div_fhi(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -434,6 +465,7 @@ def calc_div_fhi(watch=None, grid=None, **kw):
     requires=[],
     description="div of electron heat flux (B2 5.0 formulation)",
     unit="W/m³",
+    matlab_lines="calc_additional.m:481-495",
 )
 def calc_div_fhe(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -445,6 +477,7 @@ def calc_div_fhe(watch=None, grid=None, **kw):
     requires=[],
     description="div of ion heat flux (mdf)",
     unit="W/m³",
+    matlab_lines="calc_additional.m:481-495",
 )
 def calc_div_fhi_mdf(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -456,6 +489,7 @@ def calc_div_fhi_mdf(watch=None, grid=None, **kw):
     requires=[],
     description="poloidal div of ion heat flux (mdf)",
     unit="W/m³",
+    matlab_lines="calc_additional.m:481-495",
 )
 def calc_div_fhi_mdf_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -467,6 +501,7 @@ def calc_div_fhi_mdf_th(watch=None, grid=None, **kw):
     requires=[],
     description="radial div of ion heat flux (mdf)",
     unit="W/m³",
+    matlab_lines="calc_additional.m:481-495",
 )
 def calc_div_fhi_mdf_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -478,6 +513,7 @@ def calc_div_fhi_mdf_r(watch=None, grid=None, **kw):
     requires=[],
     description="div of electron heat flux (mdf)",
     unit="W/m³",
+    matlab_lines="calc_additional.m:481-495",
 )
 def calc_div_fhe_mdf(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -489,6 +525,7 @@ def calc_div_fhe_mdf(watch=None, grid=None, **kw):
     requires=[],
     description="poloidal div of electron heat flux (mdf)",
     unit="W/m³",
+    matlab_lines="calc_additional.m:481-495",
 )
 def calc_div_fhe_mdf_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -500,6 +537,7 @@ def calc_div_fhe_mdf_th(watch=None, grid=None, **kw):
     requires=[],
     description="radial div of electron heat flux (mdf)",
     unit="W/m³",
+    matlab_lines="calc_additional.m:481-495",
 )
 def calc_div_fhe_mdf_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -516,6 +554,7 @@ def calc_div_fhe_mdf_r(watch=None, grid=None, **kw):
     description="current-related particle flux, poloidal",
     unit="m⁻² s⁻¹",
     location="face",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_fna_curr_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -545,6 +584,7 @@ def calc_fna_curr_th(watch=None, grid=None, comp=None, **kw):
     description="current-related particle flux, radial",
     unit="m⁻² s⁻¹",
     location="face",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_fna_curr_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -592,6 +632,7 @@ def _zero_neutral_cols(out, comp):
     requires=[],
     description="div of current particle flux",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_div_fna_curr(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -610,6 +651,7 @@ def calc_div_fna_curr(watch=None, grid=None, comp=None, **kw):
     description="effective poloidal velocity from friction flux",
     unit="m/s",
     location="face",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_ua_eff_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -626,6 +668,7 @@ def calc_ua_eff_th(watch=None, grid=None, **kw):
     description="effective radial velocity from friction flux",
     unit="m/s",
     location="face",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_ua_eff_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -642,6 +685,7 @@ def calc_ua_eff_r(watch=None, grid=None, **kw):
     description="diffusion velocity, poloidal",
     unit="m/s",
     location="face",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_ua_diff_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -658,6 +702,7 @@ def calc_ua_diff_th(watch=None, grid=None, **kw):
     description="diffusion velocity, radial",
     unit="m/s",
     location="face",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_ua_diff_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -673,6 +718,7 @@ def calc_ua_diff_r(watch=None, grid=None, **kw):
     requires=[],
     description="div of parallel velocity * pbs",
     unit="s⁻¹",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_div_ua(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -686,6 +732,7 @@ def calc_div_ua(watch=None, grid=None, **kw):
     requires=[],
     description="div of effective velocity * fcS",
     unit="s⁻¹",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_div_ua_eff(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -704,6 +751,7 @@ def calc_div_ua_eff(watch=None, grid=None, **kw):
     requires=[],
     description="div of ExB velocity (fna_nuExB / naf)",
     unit="s⁻¹",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_div_ua_ExB(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -721,6 +769,7 @@ def calc_div_ua_ExB(watch=None, grid=None, **kw):
     requires=[],
     description="div of diffusion velocity * fcS",
     unit="s⁻¹",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_div_ua_diff(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -739,6 +788,7 @@ def calc_div_ua_diff(watch=None, grid=None, **kw):
     requires=[],
     description="div of curvature viscosity momentum flux",
     unit="Pa/m",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_div_fmo_viscurv(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -759,6 +809,7 @@ def calc_div_fmo_viscurv(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="div of ∇B viscosity momentum flux",
     unit="Pa/m",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_div_fmo_vis_BgradB(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -779,6 +830,7 @@ def calc_div_fmo_vis_BgradB(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="div of diamagnetic (mdf) flux",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_div_fna_dia_mdf(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -790,6 +842,7 @@ def calc_div_fna_dia_mdf(watch=None, grid=None, **kw):
     requires=[],
     description="div of ExB drift flux",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_div_fna_nuExB(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -801,6 +854,7 @@ def calc_div_fna_nuExB(watch=None, grid=None, **kw):
     requires=[],
     description="poloidal div of ExB drift flux",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_div_fna_nuExB_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -812,6 +866,7 @@ def calc_div_fna_nuExB_th(watch=None, grid=None, **kw):
     requires=[],
     description="radial div of ExB drift flux",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_div_fna_nuExB_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -823,6 +878,7 @@ def calc_div_fna_nuExB_r(watch=None, grid=None, **kw):
     requires=[],
     description="div of ∇B drift flux",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_div_fna_nuBgradB(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -834,6 +890,7 @@ def calc_div_fna_nuBgradB(watch=None, grid=None, **kw):
     requires=[],
     description="poloidal div of ∇B drift flux",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_div_fna_nuBgradB_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -845,6 +902,7 @@ def calc_div_fna_nuBgradB_th(watch=None, grid=None, **kw):
     requires=[],
     description="radial div of ∇B drift flux",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_div_fna_nuBgradB_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -856,6 +914,7 @@ def calc_div_fna_nuBgradB_r(watch=None, grid=None, **kw):
     requires=[],
     description="div of parallel particle flux",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_div_fna_nupar(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -867,6 +926,7 @@ def calc_div_fna_nupar(watch=None, grid=None, **kw):
     requires=[],
     description="div of anomalous pinch flux",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_div_fna_nuAN(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -878,6 +938,7 @@ def calc_div_fna_nuAN(watch=None, grid=None, **kw):
     requires=[],
     description="div of Rhie-Chow flux",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:406-476",
 )
 def calc_div_fna_RhieChow(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -906,6 +967,7 @@ def _species_mass_kg(comp):
     description="electron current flux, poloidal",
     unit="m⁻² s⁻¹",
     location="face",
+    matlab_lines="calc_additional.m:416-421",
 )
 def calc_fne_curr_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -922,6 +984,7 @@ def calc_fne_curr_th(watch=None, grid=None, comp=None, **kw):
     description="electron current flux, radial",
     unit="m⁻² s⁻¹",
     location="face",
+    matlab_lines="calc_additional.m:416-421",
 )
 def calc_fne_curr_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -938,6 +1001,7 @@ def calc_fne_curr_r(watch=None, grid=None, comp=None, **kw):
     description="convective particle flux, poloidal",
     unit="m⁻² s⁻¹",
     location="face",
+    matlab_lines="calc_additional.m:416-421",
 )
 def calc_fna_conv_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -951,6 +1015,7 @@ def calc_fna_conv_th(watch=None, grid=None, comp=None, **kw):
     description="convective particle flux, radial",
     unit="m⁻² s⁻¹",
     location="face",
+    matlab_lines="calc_additional.m:416-421",
 )
 def calc_fna_conv_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -974,6 +1039,7 @@ def _sum_over_charged(ws, arr_name: str, zs: np.ndarray) -> np.ndarray:
     description="electron heat flux from ExB drift, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhe_nuExB_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -990,6 +1056,7 @@ def calc_fhe_nuExB_th(watch=None, grid=None, comp=None, **kw):
     description="electron heat flux from ExB drift, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhe_nuExB_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1004,6 +1071,7 @@ def calc_fhe_nuExB_r(watch=None, grid=None, comp=None, **kw):
     description="electron heat flux from parallel flow, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhe_nupar_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1019,6 +1087,7 @@ def calc_fhe_nupar_th(watch=None, grid=None, comp=None, **kw):
     description="electron heat flux from anomalous pinch, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhe_fnaAN_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1033,6 +1102,7 @@ def calc_fhe_fnaAN_th(watch=None, grid=None, comp=None, **kw):
     description="electron heat flux from anomalous pinch, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhe_fnaAN_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1058,6 +1128,7 @@ def _fmo_drift(watch, grid, ws, fna_th, fna_r, factor=1.0):
     description="momentum flux from ExB drift, poloidal",
     unit="Pa",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fmo_nuExB_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1071,6 +1142,7 @@ def calc_fmo_nuExB_th(watch=None, grid=None, comp=None, **kw):
     description="momentum flux from ExB drift, radial",
     unit="Pa",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fmo_nuExB_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1084,6 +1156,7 @@ def calc_fmo_nuExB_r(watch=None, grid=None, comp=None, **kw):
     description="momentum flux from ∇B drift, poloidal",
     unit="Pa",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fmo_nuBgradB_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1097,6 +1170,7 @@ def calc_fmo_nuBgradB_th(watch=None, grid=None, comp=None, **kw):
     description="momentum flux from ∇B drift, radial",
     unit="Pa",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fmo_nuBgradB_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1110,6 +1184,7 @@ def calc_fmo_nuBgradB_r(watch=None, grid=None, comp=None, **kw):
     description="momentum flux from anomalous pinch, poloidal",
     unit="Pa",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fmo_fnaAN_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1123,6 +1198,7 @@ def calc_fmo_fnaAN_th(watch=None, grid=None, comp=None, **kw):
     description="momentum flux from anomalous pinch, radial",
     unit="Pa",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fmo_fnaAN_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1138,6 +1214,7 @@ def calc_fmo_fnaAN_r(watch=None, grid=None, comp=None, **kw):
     description="momentum flux from parallel flow, poloidal",
     unit="Pa",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fmo_fnapar_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1151,6 +1228,7 @@ def calc_fmo_fnapar_th(watch=None, grid=None, comp=None, **kw):
     description="convective momentum flux, poloidal (ions only)",
     unit="Pa",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fmo_conv_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1170,6 +1248,7 @@ def calc_fmo_conv_th(watch=None, grid=None, comp=None, **kw):
     description="convective momentum flux, radial (ions only)",
     unit="Pa",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fmo_conv_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1189,6 +1268,7 @@ def calc_fmo_conv_r(watch=None, grid=None, comp=None, **kw):
     description="5/2 particle flux, poloidal",
     unit="m⁻² s⁻¹",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fna53_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1201,6 +1281,7 @@ def calc_fna53_th(watch=None, grid=None, comp=None, **kw):
     description="5/2 particle flux, radial",
     unit="m⁻² s⁻¹",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fna53_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1222,6 +1303,7 @@ def _fne_sum(watch, grid, ws, name):
     description="electron flux from ∇B drift, poloidal",
     unit="m⁻² s⁻¹",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fne_nuBgradB_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1239,6 +1321,7 @@ def calc_fne_nuBgradB_th(watch=None, grid=None, comp=None, **kw):
     description="electron flux from ∇B drift, radial",
     unit="m⁻² s⁻¹",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fne_nuBgradB_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1256,6 +1339,7 @@ def calc_fne_nuBgradB_r(watch=None, grid=None, comp=None, **kw):
     description="total electron flux, poloidal",
     unit="m⁻² s⁻¹",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fne_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1283,6 +1367,7 @@ def calc_fne_th(watch=None, grid=None, comp=None, **kw):
     description="total electron flux, radial",
     unit="m⁻² s⁻¹",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fne_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1308,6 +1393,7 @@ def calc_fne_r(watch=None, grid=None, comp=None, **kw):
     description="5/2 electron flux, poloidal",
     unit="m⁻² s⁻¹",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fne53_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1326,6 +1412,7 @@ def calc_fne53_th(watch=None, grid=None, comp=None, **kw):
     description="5/2 electron flux, radial",
     unit="m⁻² s⁻¹",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fne53_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1342,6 +1429,7 @@ def calc_fne53_r(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="parallel heat flux coefficient c071",
     unit="",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_c071(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -1361,6 +1449,7 @@ def calc_c071(watch=None, grid=None, **kw):
     description="electron heat flux from parallel current, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhe_qeprll_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1379,6 +1468,7 @@ def calc_fhe_qeprll_th(watch=None, grid=None, comp=None, **kw):
     description="electron heat flux from parallel current, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhe_qeprll_r(watch=None, grid=None, **kw):
     return np.zeros(grid.n_faces)
@@ -1389,6 +1479,7 @@ def calc_fhe_qeprll_r(watch=None, grid=None, **kw):
     requires=[],
     description="div of electron parallel-current heat flux",
     unit="W/m³",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_div_fhe_qeprll(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1428,6 +1519,7 @@ def _b2mn_param(watch, key: str, default: float) -> float:
     description="electron heat flux from parallel E-hat, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhe_alphaEhat_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1461,6 +1553,7 @@ def _b2xehx_approx(grid, ws):
     description="electron heat flux from parallel E-hat, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhe_alphaEhat_r(watch=None, grid=None, **kw):
     return np.zeros(grid.n_faces)
@@ -1477,6 +1570,7 @@ def _fhi_conv_sum(ws, fname: str) -> np.ndarray:
     description="ion heat flux from ExB drift, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhi_nuExB_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -1490,6 +1584,7 @@ def calc_fhi_nuExB_th(watch=None, grid=None, **kw):
     description="ion heat flux from ExB drift, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhi_nuExB_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -1503,6 +1598,7 @@ def calc_fhi_nuExB_r(watch=None, grid=None, **kw):
     description="ion heat flux from parallel flow, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhi_nupar_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -1516,6 +1612,7 @@ def calc_fhi_nupar_th(watch=None, grid=None, **kw):
     description="ion heat flux from anomalous pinch, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhi_fnaAN_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -1529,6 +1626,7 @@ def calc_fhi_fnaAN_th(watch=None, grid=None, **kw):
     description="ion heat flux from anomalous pinch, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhi_fnaAN_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -1542,6 +1640,7 @@ def calc_fhi_fnaAN_r(watch=None, grid=None, **kw):
     description="convective ion heat flux, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhi_conv_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -1555,6 +1654,7 @@ def calc_fhi_conv_th(watch=None, grid=None, **kw):
     description="convective ion heat flux, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhi_conv_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -1568,6 +1668,7 @@ def calc_fhi_conv_r(watch=None, grid=None, **kw):
     description="ion heat flux from friction, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhi_fni_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -1581,6 +1682,7 @@ def calc_fhi_fni_th(watch=None, grid=None, **kw):
     description="ion heat flux from friction, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhi_fni_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -1594,6 +1696,7 @@ def calc_fhi_fni_r(watch=None, grid=None, **kw):
     description="ion heat flux from current, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhi_curr_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1610,6 +1713,7 @@ def calc_fhi_curr_th(watch=None, grid=None, comp=None, **kw):
     description="ion heat flux from current, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhi_curr_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1626,6 +1730,7 @@ def calc_fhi_curr_r(watch=None, grid=None, comp=None, **kw):
     description="convective electron heat flux, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhe_conv_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1642,6 +1747,7 @@ def calc_fhe_conv_th(watch=None, grid=None, comp=None, **kw):
     description="convective electron heat flux, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhe_conv_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -1658,6 +1764,7 @@ def calc_fhe_conv_r(watch=None, grid=None, comp=None, **kw):
     description="conductive electron heat flux, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhe_gradte_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -1670,6 +1777,7 @@ def calc_fhe_gradte_th(watch=None, grid=None, **kw):
     description="conductive electron heat flux, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhe_gradte_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -1682,6 +1790,7 @@ def calc_fhe_gradte_r(watch=None, grid=None, **kw):
     description="conductive ion heat flux, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhi_gradte_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -1694,6 +1803,7 @@ def calc_fhi_gradte_th(watch=None, grid=None, **kw):
     description="conductive ion heat flux, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fhi_gradte_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -1706,6 +1816,7 @@ def calc_fhi_gradte_r(watch=None, grid=None, **kw):
     description="Joule heating flux, poloidal",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fh_joule_th(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -1719,6 +1830,7 @@ def calc_fh_joule_th(watch=None, grid=None, **kw):
     description="Joule heating flux, radial",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:553-628",
 )
 def calc_fh_joule_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -1997,6 +2109,7 @@ def _omp_get(watch, grid, comp, name: str) -> np.ndarray:
     requires=[],
     description="OMP-integrated radial particle flux (mdf)",
     unit="s⁻¹",
+    matlab_lines="calc_additional.m:631-767",
 )
 def calc_Fna_mdf_r(watch=None, grid=None, comp=None, **kw):
     return _omp_get(watch, grid, comp, "Fna_mdf_r")
@@ -2007,6 +2120,7 @@ def calc_Fna_mdf_r(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="OMP-integrated total ion heat flux",
     unit="W",
+    matlab_lines="calc_additional.m:631-767",
 )
 def calc_Fhi_tot(watch=None, grid=None, comp=None, **kw):
     return _omp_get(watch, grid, comp, "Fhi_tot")
@@ -2017,6 +2131,7 @@ def calc_Fhi_tot(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="OMP-integrated total electron heat flux",
     unit="W",
+    matlab_lines="calc_additional.m:631-767",
 )
 def calc_Fhe_tot(watch=None, grid=None, comp=None, **kw):
     return _omp_get(watch, grid, comp, "Fhe_tot")
@@ -2027,6 +2142,7 @@ def calc_Fhe_tot(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="OMP-integrated total current",
     unit="A",
+    matlab_lines="calc_additional.m:631-767",
 )
 def calc_Fch(watch=None, grid=None, comp=None, **kw):
     return _omp_get(watch, grid, comp, "Fch")
@@ -2037,6 +2153,7 @@ def calc_Fch(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="OMP-integrated electron energy flux (extended balance)",
     unit="W",
+    matlab_lines="calc_additional.m:631-767",
 )
 def calc_Fee(watch=None, grid=None, comp=None, **kw):
     return _omp_get(watch, grid, comp, "Fee")
@@ -2047,6 +2164,7 @@ def calc_Fee(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="OMP-integrated ion energy flux (extended balance)",
     unit="W",
+    matlab_lines="calc_additional.m:631-767",
 )
 def calc_Fei(watch=None, grid=None, comp=None, **kw):
     return _omp_get(watch, grid, comp, "Fei")
@@ -2057,6 +2175,7 @@ def calc_Fei(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="OMP-integrated total energy flux (extended balance)",
     unit="W",
+    matlab_lines="calc_additional.m:631-767",
 )
 def calc_Fet(watch=None, grid=None, comp=None, **kw):
     return _omp_get(watch, grid, comp, "Fet")
@@ -2171,6 +2290,7 @@ def _ft_get(watch, grid, comp, name: str) -> np.ndarray:
     requires=[],
     description="flux-tube integrated ion heat source",
     unit="W",
+    matlab_lines="calc_additional.m:768-815",
 )
 def calc_Shi(watch=None, grid=None, comp=None, **kw):
     return _ft_get(watch, grid, comp, "Shi")
@@ -2181,6 +2301,7 @@ def calc_Shi(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="flux-tube integrated electron heat source",
     unit="W",
+    matlab_lines="calc_additional.m:768-815",
 )
 def calc_She(watch=None, grid=None, comp=None, **kw):
     return _ft_get(watch, grid, comp, "She")
@@ -2191,6 +2312,7 @@ def calc_She(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="flux-tube integrated ExB ion heat source",
     unit="W",
+    matlab_lines="calc_additional.m:768-815",
 )
 def calc_Shi_dd1(watch=None, grid=None, comp=None, **kw):
     return _ft_get(watch, grid, comp, "Shi_dd1")
@@ -2205,6 +2327,7 @@ def calc_Shi_dd1(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="radiation power loss per element (core)",
     unit="W/m³",
+    matlab_lines="calc_additional.m:821-859",
 )
 def calc_Qrad(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -2250,6 +2373,7 @@ def calc_Qrad(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="total radiation power per element (core)",
     unit="W",
+    matlab_lines="calc_additional.m:821-859",
 )
 def calc_Qrad_tot(watch=None, grid=None, comp=None, **kw):
     q = _ws(watch).get("Qrad")
@@ -2263,6 +2387,7 @@ def calc_Qrad_tot(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="total radiation power (all elements)",
     unit="W",
+    matlab_lines="calc_additional.m:821-859",
 )
 def calc_Qrad_tot_sum(watch=None, grid=None, comp=None, **kw):
     q = _ws(watch).get("Qrad")
@@ -2386,6 +2511,7 @@ def _column_sums(watch, grid, comp) -> dict:
     requires=[],
     description="radial-column integrated neutral source per species",
     unit="s⁻¹",
+    matlab_lines="calc_additional.m:862-925",
 )
 def calc_Sna(watch=None, grid=None, comp=None, **kw):
     return _column_sums(watch, grid, comp).get("Sna", np.zeros(0))
@@ -2396,6 +2522,7 @@ def calc_Sna(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="radial-column integrated neutral source per element",
     unit="s⁻¹",
+    matlab_lines="calc_additional.m:862-925",
 )
 def calc_Snas(watch=None, grid=None, comp=None, **kw):
     return _column_sums(watch, grid, comp).get("Snas", np.zeros(0))
@@ -2406,6 +2533,7 @@ def calc_Snas(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="radial-column integrated radiation per element",
     unit="W",
+    matlab_lines="calc_additional.m:862-925",
 )
 def calc_Qrads(watch=None, grid=None, comp=None, **kw):
     return _column_sums(watch, grid, comp).get("Qrads", np.zeros(0))
@@ -2416,6 +2544,7 @@ def calc_Qrads(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="volume-averaged Te along radial column",
     unit="eV",
+    matlab_lines="calc_additional.m:862-925",
 )
 def calc_te_mean(watch=None, grid=None, comp=None, **kw):
     return _column_sums(watch, grid, comp).get("te_mean", np.zeros(0))
@@ -2431,6 +2560,7 @@ def calc_te_mean(watch=None, grid=None, comp=None, **kw):
     description="heat flux to plates, poloidal",
     unit="W",
     location="face",
+    matlab_lines="calc_additional.m:927-945",
 )
 def calc_fh_htpl_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -2461,6 +2591,7 @@ def calc_fh_htpl_th(watch=None, grid=None, comp=None, **kw):
     description="heat flux to plates, radial",
     unit="W",
     location="face",
+    matlab_lines="calc_additional.m:927-945",
 )
 def calc_fh_htpl_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -2507,6 +2638,7 @@ def _fhp(watch, grid, comp, direction: str) -> np.ndarray:
     description="ionization-potential energy flux, poloidal",
     unit="W",
     location="face",
+    matlab_lines="calc_additional.m:927-945",
 )
 def calc_fhp_th(watch=None, grid=None, comp=None, **kw):
     return _fhp(watch, grid, comp, "th")
@@ -2518,6 +2650,7 @@ def calc_fhp_th(watch=None, grid=None, comp=None, **kw):
     description="ionization-potential energy flux, radial",
     unit="W",
     location="face",
+    matlab_lines="calc_additional.m:927-945",
 )
 def calc_fhp_r(watch=None, grid=None, comp=None, **kw):
     return _fhp(watch, grid, comp, "r")
@@ -2529,6 +2662,7 @@ def calc_fhp_r(watch=None, grid=None, comp=None, **kw):
     description="total heat flux to plasma-facing surface, poloidal",
     unit="W",
     location="face",
+    matlab_lines="calc_additional.m:927-945",
 )
 def calc_fh_pls_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -2548,6 +2682,7 @@ def calc_fh_pls_th(watch=None, grid=None, comp=None, **kw):
     description="total heat flux to plasma-facing surface, radial",
     unit="W",
     location="face",
+    matlab_lines="calc_additional.m:927-945",
 )
 def calc_fh_pls_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -2851,6 +2986,7 @@ def _wall_get(watch, grid, comp, name: str) -> np.ndarray:
     description="total heat flux to wall boundary",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:947-1113",
 )
 def calc_fh_boundary(watch=None, grid=None, comp=None, **kw):
     return _wall_get(watch, grid, comp, "fh_boundary")
@@ -2862,6 +2998,7 @@ def calc_fh_boundary(watch=None, grid=None, comp=None, **kw):
     description="current density to wall boundary",
     unit="A/m²",
     location="face",
+    matlab_lines="calc_additional.m:947-1113",
 )
 def calc_fch_boundary(watch=None, grid=None, comp=None, **kw):
     return _wall_get(watch, grid, comp, "fch_boundary")
@@ -2873,6 +3010,7 @@ def calc_fch_boundary(watch=None, grid=None, comp=None, **kw):
     description="perpendicular saturation current density",
     unit="A/m²",
     location="face",
+    matlab_lines="calc_additional.m:947-1113",
 )
 def calc_jsat_perp(watch=None, grid=None, comp=None, **kw):
     return _wall_get(watch, grid, comp, "jsat_perp")
@@ -2884,6 +3022,7 @@ def calc_jsat_perp(watch=None, grid=None, comp=None, **kw):
     description="parallel saturation current (experimental)",
     unit="A/m²",
     location="face",
+    matlab_lines="calc_additional.m:947-1113",
 )
 def calc_jsat_par_exp(watch=None, grid=None, comp=None, **kw):
     return _wall_get(watch, grid, comp, "jsat_par_exp")
@@ -2894,6 +3033,7 @@ def calc_jsat_par_exp(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="floating potential at boundary cells",
     unit="V",
+    matlab_lines="calc_additional.m:947-1113",
 )
 def calc_po_fl_wall(watch=None, grid=None, comp=None, **kw):
     return _wall_get(watch, grid, comp, "po_fl_wall")
@@ -2905,6 +3045,7 @@ def calc_po_fl_wall(watch=None, grid=None, comp=None, **kw):
     description="total heat flux to wall (sum of components)",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:947-1113",
 )
 def calc_fh_sum(watch=None, grid=None, comp=None, **kw):
     return _wall_get(watch, grid, comp, "fh_sum")
@@ -3170,6 +3311,7 @@ def _sep_get(watch, grid, comp, name: str) -> np.ndarray:
     requires=[],
     description="ion+atom / ion density (2 columns)",
     unit="m⁻³",
+    matlab_lines="calc_additional.m:1117-1341",
 )
 def calc_ni(watch=None, grid=None, comp=None, **kw):
     return _sep_get(watch, grid, comp, "ni")
@@ -3180,6 +3322,7 @@ def calc_ni(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="mass density of charged particles",
     unit="kg/m³",
+    matlab_lines="calc_additional.m:1117-1341",
 )
 def calc_rho(watch=None, grid=None, comp=None, **kw):
     return _sep_get(watch, grid, comp, "rho")
@@ -3190,6 +3333,7 @@ def calc_rho(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="pressure of charged particles",
     unit="Pa",
+    matlab_lines="calc_additional.m:1117-1341",
 )
 def calc_p_ch(watch=None, grid=None, comp=None, **kw):
     return _sep_get(watch, grid, comp, "p_ch")
@@ -3200,6 +3344,7 @@ def calc_p_ch(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="sound speed",
     unit="m/s",
+    matlab_lines="calc_additional.m:1117-1341",
 )
 def calc_cs(watch=None, grid=None, comp=None, **kw):
     return _sep_get(watch, grid, comp, "cs")
@@ -3210,6 +3355,7 @@ def calc_cs(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="average charge per element",
     unit="",
+    matlab_lines="calc_additional.m:1117-1341",
 )
 def calc_Zavg(watch=None, grid=None, comp=None, **kw):
     return _sep_get(watch, grid, comp, "Zavg")
@@ -3220,6 +3366,7 @@ def calc_Zavg(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="separatrix electron temperature (surface averaged)",
     unit="eV",
+    matlab_lines="calc_additional.m:1117-1341",
 )
 def calc_te_sep(watch=None, grid=None, comp=None, **kw):
     return np.array([_sep_get(watch, grid, comp, "te_sep")])
@@ -3230,6 +3377,7 @@ def calc_te_sep(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="separatrix ion temperature (surface averaged)",
     unit="eV",
+    matlab_lines="calc_additional.m:1117-1341",
 )
 def calc_ti_sep(watch=None, grid=None, comp=None, **kw):
     return np.array([_sep_get(watch, grid, comp, "ti_sep")])
@@ -3240,6 +3388,7 @@ def calc_ti_sep(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="separatrix density per element",
     unit="m⁻³",
+    matlab_lines="calc_additional.m:1117-1341",
 )
 def calc_n_sep(watch=None, grid=None, comp=None, **kw):
     return _sep_get(watch, grid, comp, "n_sep")
@@ -3250,6 +3399,7 @@ def calc_n_sep(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="separatrix concentration per element (rel. to ne)",
     unit="",
+    matlab_lines="calc_additional.m:1117-1341",
 )
 def calc_n_e_sep(watch=None, grid=None, comp=None, **kw):
     return _sep_get(watch, grid, comp, "n_e_sep")
@@ -3260,6 +3410,7 @@ def calc_n_e_sep(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="separatrix concentration per element (rel. to main ion)",
     unit="",
+    matlab_lines="calc_additional.m:1117-1341",
 )
 def calc_n_D_sep(watch=None, grid=None, comp=None, **kw):
     return _sep_get(watch, grid, comp, "n_D_sep")
@@ -3270,6 +3421,7 @@ def calc_n_D_sep(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="pedestal density per element",
     unit="m⁻³",
+    matlab_lines="calc_additional.m:1117-1341",
 )
 def calc_n_ped(watch=None, grid=None, comp=None, **kw):
     return _sep_get(watch, grid, comp, "n_ped")
@@ -3280,6 +3432,7 @@ def calc_n_ped(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="divertor compression at separatrix",
     unit="",
+    matlab_lines="calc_additional.m:1117-1341",
 )
 def calc_Compr_div_sep(watch=None, grid=None, comp=None, **kw):
     return _sep_get(watch, grid, comp, "Compr_div_sep")
@@ -3290,6 +3443,7 @@ def calc_Compr_div_sep(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="divertor compression at pedestal",
     unit="",
+    matlab_lines="calc_additional.m:1117-1341",
 )
 def calc_Compr_div_ped(watch=None, grid=None, comp=None, **kw):
     return _sep_get(watch, grid, comp, "Compr_div_ped")
@@ -3300,6 +3454,7 @@ def calc_Compr_div_ped(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="divertor enrichment at separatrix",
     unit="",
+    matlab_lines="calc_additional.m:1117-1341",
 )
 def calc_Enrich_div_sep(watch=None, grid=None, comp=None, **kw):
     return _sep_get(watch, grid, comp, "Enrich_div_sep")
@@ -3310,6 +3465,7 @@ def calc_Enrich_div_sep(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="total nuclei per element in core",
     unit="",
+    matlab_lines="calc_additional.m:1117-1341",
 )
 def calc_N_tot_B25(watch=None, grid=None, comp=None, **kw):
     return _sep_get(watch, grid, comp, "N_tot_B25")
@@ -3324,6 +3480,7 @@ def calc_N_tot_B25(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="neutral pressure in private flux region",
     unit="Pa",
+    matlab_lines="calc_additional.m:171-341",
 )
 def calc_P_pfr(watch=None, grid=None, comp=None, **kw):
     """P_pfr = sum((nD_at*T_at + nD2*T_mol) * weight) / sum(weight).
@@ -3355,6 +3512,7 @@ def calc_P_pfr(watch=None, grid=None, comp=None, **kw):
     description="kinetic energy flux of reflected neutrals (from ions)",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:171-341",
 )
 def calc_fh_nutpr_th(watch=None, grid=None, comp=None, **kw):
     """Zero unless fort.44 provides wld.ewldrp_res (not in current watches)."""
@@ -3367,6 +3525,7 @@ def calc_fh_nutpr_th(watch=None, grid=None, comp=None, **kw):
     description="total neutral energy flux to wall",
     unit="W/m²",
     location="face",
+    matlab_lines="calc_additional.m:171-341",
 )
 def calc_fh_neut_tot_th(watch=None, grid=None, comp=None, **kw):
     return np.zeros(grid.n_faces)
@@ -3378,6 +3537,7 @@ def calc_fh_neut_tot_th(watch=None, grid=None, comp=None, **kw):
     description="sputtered neutral flux at wall",
     unit="m⁻²s⁻¹",
     location="face",
+    matlab_lines="calc_additional.m:171-341",
 )
 def calc_fn_sput_wall(watch=None, grid=None, comp=None, **kw):
     return np.zeros(grid.n_faces)
@@ -3392,6 +3552,7 @@ def calc_fn_sput_wall(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="gas puff rate per element",
     unit="s⁻¹",
+    matlab_lines="calc_additional.m:1343-1410",
 )
 def calc_Gas_puff(watch=None, grid=None, comp=None, **kw):
     if comp is None:
@@ -3411,6 +3572,7 @@ def calc_Gas_puff(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="fueling rate (main ion gas puff)",
     unit="s⁻¹",
+    matlab_lines="calc_additional.m:1343-1410",
 )
 def calc_Fueling(watch=None, grid=None, comp=None, **kw):
     gas = calc_Gas_puff(watch=watch, grid=grid, comp=comp)
@@ -3424,6 +3586,7 @@ def calc_Fueling(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="seeding rate (radiating impurity gas puff)",
     unit="s⁻¹",
+    matlab_lines="calc_additional.m:1343-1410",
 )
 def calc_Seeding(watch=None, grid=None, comp=None, **kw):
     gas = calc_Gas_puff(watch=watch, grid=grid, comp=comp)
@@ -3472,6 +3635,7 @@ def _region_integrals(watch, grid, comp) -> dict:
     requires=[],
     description="particle inventory per region",
     unit="",
+    matlab_lines="calc_additional.m:1414-1429",
 )
 def calc_Na_reg(watch=None, grid=None, comp=None, **kw):
     return _region_integrals(watch, grid, comp).get("Na_reg", np.zeros(0))
@@ -3482,6 +3646,7 @@ def calc_Na_reg(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="radiation power per region",
     unit="W",
+    matlab_lines="calc_additional.m:1414-1429",
 )
 def calc_she_rad_reg(watch=None, grid=None, comp=None, **kw):
     return _region_integrals(watch, grid, comp).get("she_rad_reg", np.zeros(0))
@@ -3496,6 +3661,7 @@ def calc_she_rad_reg(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="poloidal connector length per cell",
     unit="m",
+    matlab_lines="calc_additional.m:1431-1471",
 )
 def calc_Hx1(watch=None, grid=None, **kw):
     hx1 = np.zeros(grid.n_cells)
@@ -3515,6 +3681,7 @@ def calc_Hx1(watch=None, grid=None, **kw):
     description="radial electric field",
     unit="V/m",
     location="face",
+    matlab_lines="calc_additional.m:1431-1471",
 )
 def calc_E_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -3530,6 +3697,7 @@ def calc_E_r(watch=None, grid=None, comp=None, **kw):
     description="poloidal electric field",
     unit="V/m",
     location="face",
+    matlab_lines="calc_additional.m:1431-1471",
 )
 def calc_E_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -3545,6 +3713,7 @@ def calc_E_th(watch=None, grid=None, comp=None, **kw):
     description="radial electron pressure gradient",
     unit="Pa/m",
     location="face",
+    matlab_lines="calc_additional.m:1431-1471",
 )
 def calc_gradPe_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -3559,6 +3728,7 @@ def calc_gradPe_r(watch=None, grid=None, comp=None, **kw):
     description="poloidal electron pressure gradient",
     unit="Pa/m",
     location="face",
+    matlab_lines="calc_additional.m:1431-1471",
 )
 def calc_gradPe_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -3573,6 +3743,7 @@ def calc_gradPe_th(watch=None, grid=None, comp=None, **kw):
     description="radial ion pressure gradient per species",
     unit="Pa/m",
     location="face",
+    matlab_lines="calc_additional.m:1431-1471",
 )
 def calc_gradPi_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -3591,6 +3762,7 @@ def calc_gradPi_r(watch=None, grid=None, comp=None, **kw):
     description="poloidal ion pressure gradient per species",
     unit="Pa/m",
     location="face",
+    matlab_lines="calc_additional.m:1431-1471",
 )
 def calc_gradPi_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -3609,6 +3781,7 @@ def calc_gradPi_th(watch=None, grid=None, comp=None, **kw):
     description="radial electron temperature gradient",
     unit="eV/m",
     location="face",
+    matlab_lines="calc_additional.m:1431-1471",
 )
 def calc_gradTe_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -3623,6 +3796,7 @@ def calc_gradTe_r(watch=None, grid=None, comp=None, **kw):
     description="radial ion temperature gradient",
     unit="eV/m",
     location="face",
+    matlab_lines="calc_additional.m:1431-1471",
 )
 def calc_gradTi_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -3637,6 +3811,7 @@ def calc_gradTi_r(watch=None, grid=None, comp=None, **kw):
     description="poloidal electron temperature gradient",
     unit="eV/m",
     location="face",
+    matlab_lines="calc_additional.m:1431-1471",
 )
 def calc_gradTe_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -3651,6 +3826,7 @@ def calc_gradTe_th(watch=None, grid=None, comp=None, **kw):
     description="poloidal ion temperature gradient",
     unit="eV/m",
     location="face",
+    matlab_lines="calc_additional.m:1431-1471",
 )
 def calc_gradTi_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -3664,6 +3840,7 @@ def calc_gradTi_th(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="cell-centered ExB velocity, poloidal",
     unit="m/s",
+    matlab_lines="calc_additional.m:1431-1471",
 )
 def calc_vel_ExBc_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -3680,6 +3857,7 @@ def calc_vel_ExBc_th(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="poloidal projection of parallel velocity",
     unit="m/s",
+    matlab_lines="calc_additional.m:1431-1471",
 )
 def calc_ua_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -3692,6 +3870,7 @@ def calc_ua_th(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="poloidal projection of sound speed",
     unit="m/s",
+    matlab_lines="calc_additional.m:1431-1471",
 )
 def calc_cs_th(watch=None, grid=None, comp=None, **kw):
     cs = _sep_get(watch, grid, comp, "cs")
@@ -3707,6 +3886,7 @@ def calc_cs_th(watch=None, grid=None, comp=None, **kw):
     description="radial E-field from ExB (up)",
     unit="V/m",
     location="face",
+    matlab_lines="calc_additional.m:1431-1471",
 )
 def calc_E_up_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -3730,6 +3910,7 @@ def calc_E_up_r(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="flux-tube collisionality (nu*tau ratio)",
     unit="",
+    matlab_lines="calc_additional.m:1473-1634",
 )
 def calc_numcoli(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -3761,6 +3942,7 @@ def calc_numcoli(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="cell collisionality (from flux tube)",
     unit="",
+    matlab_lines="calc_additional.m:1473-1634",
 )
 def calc_numcolic(watch=None, grid=None, comp=None, **kw):
     numcoli = ws_get_nc(watch, grid, comp)
@@ -3789,6 +3971,7 @@ def ws_get_nc(watch, grid, comp):
     requires=[],
     description="pumped particle flux per element",
     unit="s⁻¹",
+    matlab_lines="calc_additional.m:1473-1634",
 )
 def calc_Fna_pump(watch=None, grid=None, comp=None, **kw):
     if comp is None:
@@ -3825,6 +4008,7 @@ def calc_Fna_pump(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="heat load per boundary segment (9 components, MW)",
     unit="MW",
+    matlab_lines="calc_additional.m:1473-1634",
 )
 def calc_Fh_boundary_seg(watch=None, grid=None, comp=None, **kw):
     wq = _wall_quantities(watch, grid, comp)
@@ -3860,6 +4044,7 @@ def calc_Fh_boundary_seg(watch=None, grid=None, comp=None, **kw):
     description="neoclassical radial electric field",
     unit="V/m",
     location="face",
+    matlab_lines="calc_additional.m:1473-1634",
 )
 def calc_E_NEO_r(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -4138,6 +4323,7 @@ def _ftsrc_get(watch, grid, comp, name: str) -> np.ndarray:
     requires=[],
     description="electron heat source along flux tube (top→target)",
     unit="W",
+    matlab_lines="calc_additional.m:1636-1753",
 )
 def calc_She_top_tar_ft(watch=None, grid=None, comp=None, **kw):
     return _ftsrc_get(watch, grid, comp, "She_top_tar_ft")
@@ -4148,6 +4334,7 @@ def calc_She_top_tar_ft(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="ion heat source along flux tube (top→target)",
     unit="W",
+    matlab_lines="calc_additional.m:1636-1753",
 )
 def calc_Shi_top_tar_ft(watch=None, grid=None, comp=None, **kw):
     return _ftsrc_get(watch, grid, comp, "Shi_top_tar_ft")
@@ -4158,6 +4345,7 @@ def calc_Shi_top_tar_ft(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="electron heat source at divertor entrance",
     unit="W",
+    matlab_lines="calc_additional.m:1636-1753",
 )
 def calc_She_entr_tar_ft(watch=None, grid=None, comp=None, **kw):
     return _ftsrc_get(watch, grid, comp, "She_entr_tar_ft")
@@ -4168,6 +4356,7 @@ def calc_She_entr_tar_ft(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="ion heat source at divertor entrance",
     unit="W",
+    matlab_lines="calc_additional.m:1636-1753",
 )
 def calc_Shi_entr_tar_ft(watch=None, grid=None, comp=None, **kw):
     return _ftsrc_get(watch, grid, comp, "Shi_entr_tar_ft")
@@ -4177,6 +4366,7 @@ def calc_Shi_entr_tar_ft(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="total viscous momentum source",
     unit="Pa/m",
+    matlab_lines="calc_additional.m:1636-1753",
 )
 def calc_smo_vis_tot(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -4190,6 +4380,7 @@ def calc_smo_vis_tot(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="poloidal part of total viscous momentum source",
     unit="Pa/m",
+    matlab_lines="calc_additional.m:1636-1753",
 )
 def calc_smo_vis_tot_th(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -4203,6 +4394,7 @@ def calc_smo_vis_tot_th(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="radial part of total viscous momentum source",
     unit="Pa/m",
+    matlab_lines="calc_additional.m:1636-1753",
 )
 def calc_smo_vis_tot_r(watch=None, grid=None, **kw):
     ws = _ws(watch)
@@ -4257,6 +4449,7 @@ def _cvs_boundary(grid):
     requires=[],
     description="neutral source per element (sum of ion sources)",
     unit="m⁻³ s⁻¹",
+    matlab_lines="calc_additional.m:497-521",
 )
 def calc_snas(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
@@ -4280,6 +4473,7 @@ def calc_snas(watch=None, grid=None, comp=None, **kw):
     requires=[],
     description="neutral source integrated per boundary region and element",
     unit="s⁻¹",
+    matlab_lines="calc_additional.m:497-521",
 )
 def calc_snas_bound_reg(watch=None, grid=None, comp=None, **kw):
     ws = _ws(watch)
