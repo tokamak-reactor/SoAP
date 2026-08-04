@@ -4,6 +4,7 @@ from typing import Any
 import numpy as np
 from solps_analysis.core.grid import GridTopology
 from solps_analysis.core.dataset import SolpsWatch
+from solps_analysis.core.variable import SolpsVariable, VariableMeta
 
 EXTRACTOR_REGISTRY: dict[str, dict[str, Any]] = {}
 
@@ -17,6 +18,46 @@ def _require_regions(grid: GridTopology, needed: list[str]) -> None:
         )
 
 
+def _resolve_variable(watch: SolpsWatch, variable: str) -> SolpsVariable:
+    """Resolve a variable name to a SolpsVariable.
+
+    Lookup order:
+      1. watch.get(name)            — raw .dat variables (b2nph9_te, …)
+      2. watch.construct(name)      — derived quantities (te_sep, E_r, …)
+      3. workspace (build_workspace) — MATLAB-style names (te, po, …)
+    """
+    var = watch.get(variable)
+    if var is not None:
+        return var
+    var = watch.construct(variable)
+    if var is not None:
+        return var
+    from solps_analysis.io.matlab_vars import build_workspace
+    ws = build_workspace(watch)
+    data = ws.get(variable)
+    if data is not None:
+        return SolpsVariable(
+            data=np.asarray(data, dtype=np.float64),
+            meta=VariableMeta(name=variable, unit=_guess_unit(variable)),
+        )
+    raise ValueError(
+        f"Variable '{variable}' not found: not a raw .dat variable, "
+        "not a registered quantity, and not in the MATLAB workspace. "
+        "Use watch.list_variables() / list_quantities() to see names."
+    )
+
+
+_UNITS = {
+    "te": "eV", "ti": "eV", "tn": "eV", "ne": "m⁻³", "po": "V", "ue": "m/s",
+    "Zeff": "", "she": "W/m³", "shi": "W/m³", "na": "m⁻³", "ua": "m/s",
+}
+
+
+def _guess_unit(name: str) -> str:
+    base = name.split("_")[0]
+    return _UNITS.get(base, _UNITS.get(name, ""))
+
+
 def extract_profile(
     watch: SolpsWatch,
     variable: str,
@@ -27,9 +68,7 @@ def extract_profile(
     x_axis_unit: str = "m",
 ) -> tuple[np.ndarray, np.ndarray, str, str]:
     # ── resolve variable data ─────────────────────────────────────
-    var = watch.get(variable)
-    if var is None:
-        raise ValueError(f"Variable '{variable}' not found in watch")
+    var = _resolve_variable(watch, variable)
     data = np.asarray(var.data, dtype=np.float64)
     ylabel = f"{variable} [{var.meta.unit}]" if var.meta.unit else variable
     if data.ndim > 1:

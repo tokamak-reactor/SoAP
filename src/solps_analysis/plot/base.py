@@ -158,6 +158,8 @@ class Plot1D(Plot):
             for a in alongs:
                 pairs.append((var_name, a))
 
+        xl = ""
+        yl = ""
         for var_name, a in pairs:
             try:
                 x, y, xl, yl = extract_profile(
