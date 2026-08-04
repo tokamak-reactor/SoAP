@@ -1725,6 +1725,342 @@ def calc_fh_joule_r(watch=None, grid=None, **kw):
     pof = ws["pof"] if "pof" in ws else intface(grid, ws["po"], 0, _intface_method(grid))
     return ws["fch_r"] * pof
 
+
+# ──────────────────────────────────────────────────────────────
+# OMP-integrated fluxes (lines 631-767)
+# ──────────────────────────────────────────────────────────────
+
+def _omp_integrals(watch, grid, comp) -> dict:
+    """Integrate face fluxes along outer/inner midplane flux surfaces.
+
+    Port of calc_additional.m lines 631-767.  Returns dict of arrays:
+      - species arrays: (len_cs, ns): Fna_mdf_r, Fna_mdf, Fna_Dgradn_r,
+        Fna_flo_r, Fna_nuBgradB_r, Fna_dia_mdf_r, FnaExB_r, Fna_nuAN_r,
+        Fmo_r, Fmo_ExB_r, Fmo_nuBgradB_r, Fmo_fnaVan_r, Fmo_vis_r,
+        Fmo_conv_r, Fmo_curr_r, Fmo_fna_mo_r, Fch_AN, Fch_in, Fch_inert,
+        Fch_vispar, Fch_visper, Fch_visq, Fna_curr_tot
+      - scalar arrays: (len_cs,): Fhi_tot, Fhe_tot, Fhe_gradte, Fhn_tot,
+        Fch_nuBgradB, Fch, Fhi_nuExB, Fhe_nuExB, Fhi_dia_mdf, Fhe_dia_mdf,
+        Fhi_nuBgradB, Fhe_nuBgradB, Fhi_curr, Fhe_curr, Fei_curr, Fei_kin,
+        Fhi_AN, Fhe_AN, Fhi_cond, Fhi_flo, Fhi_conv, Fhi_mdf, Fhe_cond,
+        Fhe_flo, Fhe_conv, Fhe_mdf, Fee, Fei, Fet
+    """
+    cached = getattr(watch, "_omp_integrals", None)
+    if cached is not None:
+        return cached
+
+    ws = _ws(watch)
+    from solps_analysis.io.matlab_vars import species_am
+
+    # OMP/IMP coordinates
+    watch.compute_regions()
+    omp = grid.outer_midplane_cells
+    if omp is None or len(omp) < 2:
+        watch._omp_integrals = {}
+        return {}
+
+    def _fc_coords(cells):
+        out = []
+        for k in range(1, len(cells)):
+            prev_fcs = grid.cv_fc[grid.cv_fc_p[cells[k-1], 0]:grid.cv_fc_p[cells[k-1], 0]+grid.cv_fc_p[cells[k-1], 1]]
+            cur_fcs = grid.cv_fc[grid.cv_fc_p[cells[k], 0]:grid.cv_fc_p[cells[k], 0]+grid.cv_fc_p[cells[k], 1]]
+            common = np.intersect1d(prev_fcs, cur_fcs)
+            if common.size:
+                out.append(common[0])
+        return np.array(out, dtype=np.intp)
+
+    fc_omp = _fc_coords(omp)
+    imp = grid.inner_midplane_cells
+    fc_imp = _fc_coords(imp) if imp is not None else np.array([], dtype=np.intp)
+    len_cs = len(fc_omp)
+
+    # isCrossOutmidpl / isCrossInmidpl (1-based index into fc_omp/fc_imp)
+    fs_fc_p = grid.fs_fc_p
+    fs_fc = grid.fs_fc
+    n_fs = fs_fc_p.shape[0]
+    is_cross_out = np.zeros(n_fs, dtype=int)
+    is_cross_in = np.zeros(n_fs, dtype=int)
+    for i in range(n_fs):
+        fcs = fs_fc[fs_fc_p[i, 0]:fs_fc_p[i, 0] + fs_fc_p[i, 1]]
+        inter = np.intersect1d(fcs, fc_omp)
+        if inter.size:
+            is_cross_out[i] = np.where(fc_omp == inter.min())[0][0] + 1
+        inter = np.intersect1d(fcs, fc_imp)
+        if inter.size:
+            is_cross_in[i] = np.where(fc_imp == inter.min())[0][0] + 1
+
+    ns = ws["fna_mdf_r"].shape[1]
+    n_fc = grid.n_faces
+    zs = _zs(comp)
+    ams = species_am(watch) if zs is not None else None
+
+    names_species = [
+        "Fna_mdf_r", "Fna_mdf", "Fna_Dgradn_r", "Fna_flo_r", "Fna_nuBgradB_r",
+        "Fna_dia_mdf_r", "FnaExB_r", "Fna_nuAN_r", "Fmo_r", "Fmo_ExB_r",
+        "Fmo_nuBgradB_r", "Fmo_fnaVan_r", "Fmo_vis_r", "Fmo_conv_r",
+        "Fmo_curr_r", "Fmo_fna_mo_r", "Fch_AN", "Fch_in", "Fch_inert",
+        "Fch_vispar", "Fch_visper", "Fch_visq", "Fna_curr_tot",
+    ]
+    out = {name: np.zeros((len_cs, ns)) for name in names_species}
+    names_scalar = [
+        "Fhi_tot", "Fhe_tot", "Fhe_gradte", "Fhn_tot", "Fch_nuBgradB", "Fch",
+        "Fhi_nuExB", "Fhe_nuExB", "Fhi_dia_mdf", "Fhe_dia_mdf",
+        "Fhi_nuBgradB", "Fhe_nuBgradB", "Fhi_curr", "Fhe_curr", "Fei_curr",
+        "Fei_kin", "Fhi_AN", "Fhe_AN", "Fhi_cond", "Fhi_flo", "Fhi_conv",
+        "Fhi_mdf", "Fhe_cond", "Fhe_flo", "Fhe_conv", "Fhe_mdf",
+        "Fee", "Fei", "Fet",
+    ]
+    for name in names_scalar:
+        out[name] = np.zeros(len_cs)
+
+    # face quantities needed
+    fq = {
+        "fna_mdf_r": ws["fna_mdf_r"], "fna_mdf_th": ws["fna_mdf_th"],
+        "fna_Dgradn_r": ws["fna_Dgradn_r"], "fna_flo_r": ws["fna_flo_r"],
+        "fna_nuBgradB_r": ws["fna_nuBgradB_r"],
+        "fna_dia_mdf_r": ws["fna_dia_mdf_r"], "fna_nuExB_r": ws["fna_nuExB_r"],
+        "fna_nuAN_r": ws["fna_nuAN_r"],
+        "fmo_r": ws["fmo_r"], "fmo_nuExB_r": ws["fmo_nuExB_r"] if "fmo_nuExB_r" in ws else None,
+        "fmo_nuBgradB_r": ws["fmo_nuBgradB_r"] if "fmo_nuBgradB_r" in ws else None,
+        "fmo_fnaAN_r": ws["fmo_fnaAN_r"] if "fmo_fnaAN_r" in ws else None,
+        "fmo_vis_r": ws["fmo_vis_r"],
+        "fmo_conv_r": ws["fmo_conv_r"] if "fmo_conv_r" in ws else None,
+        "fch_AN_r": ws["fch_AN_r"], "fch_in_r": ws["fch_in_r"],
+        "fch_inert_r": ws["fch_inert_r"], "fch_vispar_r": ws["fch_vispar_r"],
+        "fch_visper_r": ws["fch_visper_r"], "fch_visq_r": ws["fch_visq_r"],
+        "fna_curr_r": ws.get("fna_curr_r"),
+        "fhi_mdf_r": ws["fhi_mdf_r"], "fhe_mdf_r": ws["fhe_mdf_r"],
+        "fhi_nuExB_r": ws.get("fhi_nuExB_r"), "fhe_nuExB_r": ws.get("fhe_nuExB_r"),
+        "fhi_nuBgradB_r": ws.get("fhi_nuBgradB_r"), "fhe_nuBgradB_r": ws.get("fhe_nuBgradB_r"),
+        "fhi_dia_mdf_r": ws["fhi_dia_mdf_r"], "fhe_dia_mdf_r": ws["fhe_dia_mdf_r"],
+        "fhi_cond_r": ws["fhi_cond_r"], "fhi_flo_r": ws["fhi_flo_r"],
+        "fhi_conv_r": ws.get("fhi_conv_r"), "fhi_fnaAN_r": ws.get("fhi_fnaAN_r"),
+        "fhe_cond_r": ws["fhe_cond_r"], "fhe_flo_r": ws["fhe_flo_r"],
+        "fhe_conv_r": ws.get("fhe_conv_r"), "fhe_fnaAN_r": ws.get("fhe_fnaAN_r"),
+        "fhe_gradte_r": ws.get("fhe_gradte_r"),
+        "fch_nuBgradB_r": ws["fch_nuBgradB_r"], "fch_r": ws["fch_r"],
+        "fne_curr_r": ws.get("fne_curr_r"), "tef": ws.get("tef"),
+        "fee_r": ws.get("fee_r"), "fei_r": ws.get("fei_r"),
+        "fet_r": ws.get("fet_r"), "fei_kin_r": ws.get("fei_kin_r"),
+        "fei_curr_r": ws.get("fei_curr_r"),
+    }
+
+    # lazily compute derived face quantities
+    import solps_analysis.construct.builtin.calc_additional as _ca
+    import solps_analysis.construct.builtin.energy_balance as _eb
+
+    def _face(name, fallback_fn=None):
+        v = fq.get(name)
+        if v is None and fallback_fn is not None:
+            v = fallback_fn()
+        if v is None:
+            v = np.zeros(n_fc)
+        return v
+
+    def _fallback(module, name):
+        fn = getattr(module, f"calc_{name}", None)
+        if fn is None:
+            return np.zeros(n_fc)
+        try:
+            return fn(watch=watch, grid=grid, comp=comp)
+        except Exception:
+            return np.zeros(n_fc)
+
+    fq["fhi_nuExB_r"] = _face("fhi_nuExB_r", lambda: _fallback(_ca, "fhi_nuExB_r"))
+    fq["fhe_nuExB_r"] = _face("fhe_nuExB_r", lambda: _fallback(_ca, "fhe_nuExB_r"))
+    fq["fhi_nuBgradB_r"] = _face("fhi_nuBgradB_r", lambda: _fallback(_ca, "fhi_nuBgradB_r"))
+    fq["fhe_nuBgradB_r"] = _face("fhe_nuBgradB_r", lambda: _fallback(_ca, "fhe_nuBgradB_r"))
+    fq["fhi_conv_r"] = _face("fhi_conv_r", lambda: _fallback(_ca, "fhi_conv_r"))
+    fq["fhe_conv_r"] = _face("fhe_conv_r", lambda: _fallback(_ca, "fhe_conv_r"))
+    fq["fhi_fnaAN_r"] = _face("fhi_fnaAN_r", lambda: _fallback(_ca, "fhi_fnaAN_r"))
+    fq["fhe_fnaAN_r"] = _face("fhe_fnaAN_r", lambda: _fallback(_ca, "fhe_fnaAN_r"))
+    fq["fhe_gradte_r"] = _face("fhe_gradte_r", lambda: _fallback(_ca, "fhe_gradte_r"))
+    fq["fne_curr_r"] = _face("fne_curr_r", lambda: _fallback(_ca, "fne_curr_r"))
+    fq["fee_r"] = _face("fee_r", lambda: _fallback(_eb, "fee_r"))
+    fq["fei_r"] = _face("fei_r", lambda: _fallback(_eb, "fei_r"))
+    fq["fet_r"] = _face("fet_r", lambda: _fallback(_eb, "fet_r"))
+    fq["fei_kin_r"] = _face("fei_kin_r", lambda: _fallback(_eb, "fei_kin_r"))
+    fq["fei_curr_r"] = _face("fei_curr_r", lambda: _fallback(_eb, "fei_curr_r"))
+    fq["tef"] = _face("tef", lambda: _fallback(_ca, "tef"))
+
+    fc_hz = ws.get("fc_hz", np.ones(n_fc))
+    uaf = intface(grid, ws["ua"], 1, _intface_method(grid))
+    n_ci = grid.n_core_cells
+    cv_reg = grid.cv_reg
+    fc_cv = grid.fc_cv
+
+    # Precompute fallback values via lazy import of calc functions
+    def _lazy(name, *args):
+        import solps_analysis.construct.builtin.calc_additional as ca
+        fn = getattr(ca, f"calc_{name}")
+        return fn(watch=watch, grid=grid, comp=comp)
+
+    for i_fs in range(n_fs):
+        fcs = fs_fc[fs_fc_p[i_fs, 0]:fs_fc_p[i_fs, 0] + fs_fc_p[i_fs, 1]]
+        if fcs.size == 0:
+            continue
+        i_cs = is_cross_out[i_fs]
+        if i_cs == 0:
+            i_cs = is_cross_in[i_fs]
+        if i_cs == 0:
+            continue
+        if i_cs > len_cs:
+            continue
+        i_cs0 = i_cs - 1  # 0-based row
+
+        for k in range(len(fcs)):
+            fc = fcs[k]
+            cell_regs = cv_reg[fc_cv[fc]]
+            if not (np.any(cell_regs == 1) or np.any(cell_regs == 5)
+                    or np.any(cell_regs == 2) or np.any(cell_regs == 6)):
+                continue
+
+            for is_ in range(ns):
+                if zs is not None and zs[is_] == 0:
+                    if watch.neut is not None and i_cs == 1:
+                        # EIRENE neutral: source integrated over SOL column
+                        tmp = np.where(np.mod(cv_reg, 4) == 1)[0]
+                        tmp = tmp[tmp > n_ci]
+                        s = ws["sna"][tmp, is_].sum() if "sna" in ws else 0.0
+                        out["Fna_mdf_r"][i_cs0, is_] = s
+                        out["Fna_mdf"][i_cs0, is_] = s
+                    continue
+                out["Fna_mdf_r"][i_cs0, is_] += fq["fna_mdf_r"][fc, is_]
+                out["Fna_mdf"][i_cs0, is_] += fq["fna_mdf_r"][fc, is_] + fq["fna_mdf_th"][fc, is_]
+                out["Fna_Dgradn_r"][i_cs0, is_] += fq["fna_Dgradn_r"][fc, is_]
+                out["Fna_flo_r"][i_cs0, is_] += fq["fna_flo_r"][fc, is_]
+                out["Fna_nuBgradB_r"][i_cs0, is_] += fq["fna_nuBgradB_r"][fc, is_]
+                out["Fna_dia_mdf_r"][i_cs0, is_] += fq["fna_dia_mdf_r"][fc, is_]
+                out["FnaExB_r"][i_cs0, is_] += fq["fna_nuExB_r"][fc, is_]
+                out["Fna_nuAN_r"][i_cs0, is_] += fq["fna_nuAN_r"][fc, is_]
+                out["Fmo_r"][i_cs0, is_] += fq["fmo_r"][fc, is_]
+                if fq["fmo_nuExB_r"] is not None:
+                    out["Fmo_ExB_r"][i_cs0, is_] += fq["fmo_nuExB_r"][fc, is_]
+                if fq["fmo_nuBgradB_r"] is not None:
+                    out["Fmo_nuBgradB_r"][i_cs0, is_] += fq["fmo_nuBgradB_r"][fc, is_]
+                if fq["fmo_fnaAN_r"] is not None:
+                    out["Fmo_fnaVan_r"][i_cs0, is_] += fq["fmo_fnaAN_r"][fc, is_]
+                out["Fmo_vis_r"][i_cs0, is_] += fq["fmo_vis_r"][fc, is_]
+                if fq["fmo_conv_r"] is not None:
+                    out["Fmo_conv_r"][i_cs0, is_] += fq["fmo_conv_r"][fc, is_]
+                if fq["fna_curr_r"] is not None:
+                    out["Fmo_curr_r"][i_cs0, is_] += (fq["fna_curr_r"][fc, is_]
+                                                     * fc_hz[fc] * ams[is_] * MP * uaf[fc, is_])
+                    out["Fna_curr_tot"][i_cs0, is_] += fq["fna_curr_r"][fc, is_]
+                out["Fmo_fna_mo_r"][i_cs0, is_] += ws["fna_mo_r"][fc, is_] * ams[is_] * MP * uaf[fc, is_]
+                out["Fch_AN"][i_cs0, is_] += fq["fch_AN_r"][fc, is_]
+                out["Fch_in"][i_cs0, is_] += fq["fch_in_r"][fc, is_]
+                out["Fch_inert"][i_cs0, is_] += fq["fch_inert_r"][fc, is_]
+                out["Fch_vispar"][i_cs0, is_] += fq["fch_vispar_r"][fc, is_]
+                out["Fch_visper"][i_cs0, is_] += fq["fch_visper_r"][fc, is_]
+                out["Fch_visq"][i_cs0, is_] += fq["fch_visq_r"][fc, is_]
+
+            out["Fhi_nuExB"][i_cs0] += fq["fhi_nuExB_r"][fc]
+            out["Fhe_nuExB"][i_cs0] += fq["fhe_nuExB_r"][fc]
+            out["Fhi_tot"][i_cs0] += fq["fhi_mdf_r"][fc] + 2.0/3.0 * fq["fhi_nuExB_r"][fc]
+            out["Fhe_tot"][i_cs0] += fq["fhe_mdf_r"][fc] + 2.0/3.0 * fq["fhe_nuExB_r"][fc]
+            out["Fhi_mdf"][i_cs0] = out["Fhi_tot"][i_cs0] + fq["fhi_mdf_r"][fc]
+            out["Fhe_mdf"][i_cs0] = out["Fhe_tot"][i_cs0] + fq["fhe_mdf_r"][fc]
+            out["Fhe_gradte"][i_cs0] += fq["fhe_gradte_r"][fc]
+            out["Fee"][i_cs0] += fq["fee_r"][fc]
+            out["Fei"][i_cs0] += fq["fei_r"][fc]
+            out["Fet"][i_cs0] += fq["fet_r"][fc]
+            out["Fhi_nuBgradB"][i_cs0] += fq["fhi_nuBgradB_r"][fc]
+            out["Fhe_nuBgradB"][i_cs0] += fq["fhe_nuBgradB_r"][fc]
+            out["Fei_kin"][i_cs0] += fq["fei_kin_r"][fc]
+            out["Fhe_curr"][i_cs0] += 1.5 * QE * fq["fne_curr_r"][fc] * fq["tef"][fc]
+            out["Fei_curr"][i_cs0] += fq["fei_curr_r"][fc]
+            out["Fhi_dia_mdf"][i_cs0] += fq["fhi_dia_mdf_r"][fc]
+            out["Fhe_dia_mdf"][i_cs0] += fq["fhe_dia_mdf_r"][fc]
+            out["Fhi_AN"][i_cs0] += fq["fhi_fnaAN_r"][fc]
+            out["Fhe_AN"][i_cs0] += fq["fhe_fnaAN_r"][fc]
+            out["Fhi_cond"][i_cs0] += fq["fhi_cond_r"][fc]
+            out["Fhi_conv"][i_cs0] += fq["fhi_conv_r"][fc]
+            out["Fhi_flo"][i_cs0] += fq["fhi_flo_r"][fc]
+            out["Fhe_cond"][i_cs0] += fq["fhe_cond_r"][fc]
+            out["Fhe_conv"][i_cs0] += fq["fhe_conv_r"][fc]
+            out["Fhe_flo"][i_cs0] += fq["fhe_flo_r"][fc]
+            out["Fch_nuBgradB"][i_cs0] += fq["fch_nuBgradB_r"][fc]
+            out["Fch"][i_cs0] += fq["fch_r"][fc]
+
+    watch._omp_integrals = out
+    return out
+
+
+def _omp_get(watch, grid, comp, name: str) -> np.ndarray:
+    d = _omp_integrals(watch, grid, comp)
+    return d.get(name, np.zeros(0))
+
+
+@quantity(
+    name="Fna_mdf_r",
+    requires=[],
+    description="OMP-integrated radial particle flux (mdf)",
+    unit="s⁻¹",
+)
+def calc_Fna_mdf_r(watch=None, grid=None, comp=None, **kw):
+    return _omp_get(watch, grid, comp, "Fna_mdf_r")
+
+
+@quantity(
+    name="Fhi_tot",
+    requires=[],
+    description="OMP-integrated total ion heat flux",
+    unit="W",
+)
+def calc_Fhi_tot(watch=None, grid=None, comp=None, **kw):
+    return _omp_get(watch, grid, comp, "Fhi_tot")
+
+
+@quantity(
+    name="Fhe_tot",
+    requires=[],
+    description="OMP-integrated total electron heat flux",
+    unit="W",
+)
+def calc_Fhe_tot(watch=None, grid=None, comp=None, **kw):
+    return _omp_get(watch, grid, comp, "Fhe_tot")
+
+
+@quantity(
+    name="Fch",
+    requires=[],
+    description="OMP-integrated total current",
+    unit="A",
+)
+def calc_Fch(watch=None, grid=None, comp=None, **kw):
+    return _omp_get(watch, grid, comp, "Fch")
+
+
+@quantity(
+    name="Fee",
+    requires=[],
+    description="OMP-integrated electron energy flux (extended balance)",
+    unit="W",
+)
+def calc_Fee(watch=None, grid=None, comp=None, **kw):
+    return _omp_get(watch, grid, comp, "Fee")
+
+
+@quantity(
+    name="Fei",
+    requires=[],
+    description="OMP-integrated ion energy flux (extended balance)",
+    unit="W",
+)
+def calc_Fei(watch=None, grid=None, comp=None, **kw):
+    return _omp_get(watch, grid, comp, "Fei")
+
+
+@quantity(
+    name="Fet",
+    requires=[],
+    description="OMP-integrated total energy flux (extended balance)",
+    unit="W",
+)
+def calc_Fet(watch=None, grid=None, comp=None, **kw):
+    return _omp_get(watch, grid, comp, "Fet")
+
 @quantity(
     name="smo_vis_tot",
     requires=[],
