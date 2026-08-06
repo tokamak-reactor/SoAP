@@ -3,6 +3,10 @@
 Python-пакет для анализа моделирования SOLPS-ITER. Порт MATLAB-цепочки
 `read_data_3x.m` + `calc_additional.m` + `energy_balance_Extended.m` + plot-функций.
 
+> **Разработчикам:** как всё устроено, почему именно так и что ещё пусто —
+> см. [DEVELOPMENT.md](DEVELOPMENT.md) (точка входа; архитектура, единая
+> схема геометрии STR/UNSTR, статус, TODO, тестирование).
+
 ## Быстрый старт
 
 ```bash
