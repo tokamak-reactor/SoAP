@@ -167,6 +167,9 @@ class GridTopology:
     # --- Poloidal flux (structured grids: averaged from fpsi corners) ---
     cv_fpsi: np.ndarray | None = None  # (n_cells,) poloidal flux at cell centers
     fc_fpsi: np.ndarray | None = None  # (n_faces,) poloidal flux at face centers
+    vx_fpsi: np.ndarray | None = None  # (n_vertices,) poloidal flux at vertices
+    fs_psi: np.ndarray | None = None   # (n_flux_surfaces,) psi on flux surfaces
+    psi_source: str | None = None      # "b2fgmtry" | "equ" | None (zeros)
 
     # --- Derived regions (computed) ---
     inner_midplane_cells: np.ndarray | None = None

@@ -5,6 +5,7 @@ Handles both structured (3.0.x) and unstructured (3.2.x) formats.
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -703,18 +704,31 @@ def _load_structured_grid(raw: dict[str, Any]) -> GridTopology:
     grid.ft_reg = ft_reg
 
     # --- Poloidal flux (cvFpsi, fcFpsi; MATLAB lines 700-725) ---
-    cv_fpsi = np.zeros(nCv, dtype=np.float64)
+    # NOTE: fpsi in b2fgmtry is often ALL ZEROS for structured grids (b2ag
+    # does not write it). We must NOT substitute cv_ft (flux-tube number) —
+    # that silently corrupts psi. Instead: psi_source=None + warning, and
+    # the user may supply an .equ equilibrium file (psi_source="equ").
     if fpsi_data is not None and np.any(fpsi_data != 0):
+        cv_fpsi = np.zeros(nCv, dtype=np.float64)
         for iy in range(ny + 2):
             for ix in range(nx + 2):
                 idx = imap_cv[ix, iy]
                 if idx != 0:
                     cv_fpsi[idx - 1] = np.mean(fpsi_data[ix, iy, :])
+        fc_fpsi = np.zeros(nFc, dtype=np.float64)
+        for fc in range(nFc):
+            fc_fpsi[fc] = 0.5 * (cv_fpsi[fc_cv[fc, 0] - 1] + cv_fpsi[fc_cv[fc, 1] - 1])
+        grid.psi_source = "b2fgmtry"
     else:
-        cv_fpsi = cv_ft.astype(np.float64)
-    fc_fpsi = np.zeros(nFc, dtype=np.float64)
-    for fc in range(nFc):
-        fc_fpsi[fc] = 0.5 * (cv_fpsi[fc_cv[fc, 0] - 1] + cv_fpsi[fc_cv[fc, 1] - 1])
+        cv_fpsi = None
+        fc_fpsi = None
+        grid.psi_source = None
+        warnings.warn(
+            "b2fgmtry fpsi is all zeros — poloidal flux not available "
+            "from geometry. Pass an .equ equilibrium file to compute psi "
+            "(psi_source='equ').",
+            UserWarning,
+        )
     grid.cv_fpsi = cv_fpsi
     grid.fc_fpsi = fc_fpsi
 
@@ -858,6 +872,18 @@ def _load_into_grid(raw: dict[str, Any]) -> GridTopology:
             arr = arr.copy()
             arr[:, 0] = np.where(arr[:, 0] > 0, arr[:, 0] - 1, arr[:, 0])
             setattr(grid, name, arr)
+
+    # --- psi_source for unstructured grids (vxFpsi read from file) ---
+    if grid.vx_fpsi is not None and np.any(grid.vx_fpsi != 0):
+        grid.psi_source = "b2fgmtry"
+    elif grid.psi_source is None:
+        grid.psi_source = None
+        warnings.warn(
+            "b2fgmtry vxFpsi is all zeros — poloidal flux not available "
+            "from geometry. Pass an .equ equilibrium file to compute psi "
+            "(psi_source='equ').",
+            UserWarning,
+        )
 
     return grid
 
