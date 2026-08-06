@@ -876,6 +876,22 @@ def _load_into_grid(raw: dict[str, Any]) -> GridTopology:
     # --- psi_source for unstructured grids (vxFpsi read from file) ---
     if grid.vx_fpsi is not None and np.any(grid.vx_fpsi != 0):
         grid.psi_source = "b2fgmtry"
+        # Unified psi fields: fc_psi = mean(vertex psi of face),
+        # cv_psi = mean(vertex psi of cell) (matlab_wg: fcFpsi = mean of
+        # vxFpsi(fcVx); cvFpsi via intcell — mean of vertices is equivalent
+        # for visualisation and robust on triangles).
+        if grid.fc_vx is not None:
+            grid.fc_fpsi = 0.5 * (grid.vx_fpsi[grid.fc_vx[:, 0]]
+                                  + grid.vx_fpsi[grid.fc_vx[:, 1]])
+        if grid.cv_vx is not None and grid.cv_vx_p is not None:
+            cv_psi = np.zeros(grid.n_cells, dtype=np.float64)
+            for icv in range(grid.n_cells):
+                s, c = int(grid.cv_vx_p[icv, 0]), int(grid.cv_vx_p[icv, 1])
+                v = grid.cv_vx[s:s + c]
+                v = v[v >= 0]
+                if len(v):
+                    cv_psi[icv] = grid.vx_fpsi[v].mean()
+            grid.cv_fpsi = cv_psi
     elif grid.psi_source is None:
         grid.psi_source = None
         warnings.warn(

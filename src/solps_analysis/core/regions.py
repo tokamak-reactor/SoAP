@@ -437,6 +437,32 @@ def find_target_labels(grid, top: bool = False) -> tuple[int, int]:
     return inner_lbl, outer_lbl
 
 
+def compute_wall(grid: GridTopology) -> None:
+    """Identify wall faces/cells for unstructured grids (fcLbl 5-8).
+
+    In WG grids the boundary labels 1-4 are the divertor targets and 5-8
+    are the wall segments. wall_faces = faces with those labels;
+    wall_cells = PHYSICAL cells adjacent to them (cv < n_core_cells).
+    For structured grids there is NO wall (last flux surface != wall) —
+    attributes stay None (honest refusal).
+    """
+    if grid.fc_lbl is None or grid.fc_cv is None:
+        return
+    wall_lbls = (5, 6, 7, 8)
+    mask = np.isin(grid.fc_lbl, wall_lbls)
+    if not np.any(mask):
+        return
+    wall_faces = np.where(mask)[0].astype(np.int32)
+    grid.wall_faces = wall_faces
+    cvs = np.unique(grid.fc_cv[wall_faces].ravel())
+    phys = cvs[cvs < grid.n_core_cells]
+    grid.wall_cells = phys
+    if grid.cv_lbl_len is not None and len(phys):
+        grid.wall_cells_len = grid.cv_lbl_len[phys]
+    if grid.cv_vol is not None and len(phys):
+        grid.wall_cells_vol = grid.cv_vol[phys]
+
+
 def find_targets(grid: GridTopology) -> None:
     """Identify inner/outer, upper/lower, active/inactive targets.
     
@@ -915,6 +941,11 @@ def compute_all_regions(grid: GridTopology) -> dict[str, Any]:
     # 8. Boundary
     if grid.fc_lbl is not None and np.any(grid.fc_lbl != 0):
         compute_boundary_coordinates(grid)
+
+    # 7b. Wall (unstructured only; structured keeps None — honest refusal).
+    # After boundary coords so wall_cells_len (cv_lbl_len) is available.
+    if grid.fc_lbl is not None and np.any(np.isin(grid.fc_lbl, (5, 6, 7, 8))):
+        compute_wall(grid)
 
     # 9. Shift
     _shift_coordinates(grid)

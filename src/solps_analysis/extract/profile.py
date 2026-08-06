@@ -87,7 +87,9 @@ def extract_profile(
 
     # ── wall (special: boundary selection, structured rejection) ──
     if along == "wall":
-        if grid.is_structured:
+        # is_structured flag LIES for some WG grids (imap_cv.ndim==1) —
+        # check the mapping instead.
+        if grid.imap_cv is not None and grid.imap_cv.ndim == 2:
             raise ValueError(
                 "Wall profile (along='wall') is not meaningful for structured"
                 " grids — grid ends at magnetic surfaces, not physical walls."
@@ -160,28 +162,35 @@ def _extract_along_ft(grid, data, ft_num, ylabel):
 
 
 def _extract_wall(grid, data, ylabel, boundary=1, x_unit="m"):
-    """Extract profile along a wall/limiter boundary segment."""
-    closed_cvs = getattr(grid, "closed_stuct_cvs", None)
-    if closed_cvs is None or not isinstance(closed_cvs, (list, tuple)):
+    """Extract profile along the wall (unstructured grids).
+
+    Uses grid.wall_cells / wall_cells_len computed by regions.compute_wall
+    (fcLbl segments 5-8). ``boundary`` selects a wall segment — currently
+    only the full wall (boundary=1) is supported.
+    """
+    wall_cells = getattr(grid, "wall_cells", None)
+    wall_len = getattr(grid, "wall_cells_len", None)
+    if wall_cells is None or len(wall_cells) == 0:
         raise ValueError(
-            "Wall data not available — grid lacks closed_stuct_cvs. "
-            "Run watch.compute_regions() first."
+            "Wall data not available — grid lacks wall_cells. "
+            "Run watch.compute_regions() first (unstructured grid required)."
         )
-    if boundary < 1 or boundary > len(closed_cvs):
+    if boundary != 1:
         raise ValueError(
-            f"Boundary index {boundary} out of range [1, {len(closed_cvs)}]"
+            f"Wall segment {boundary} not supported yet — only the full "
+            "wall (boundary=1) is available."
         )
-    cvs = closed_cvs[boundary - 1]
-    cvs = np.asarray(cvs, dtype=np.intp).ravel()
-    valid = cvs > 0
-    cvs = cvs[valid] - 1
+    cvs = np.asarray(wall_cells, dtype=np.intp).ravel()
     cvs = cvs[cvs < grid.n_cells]
 
-    coord = grid.cv_lbl_len
-    if coord is None:
+    # Use the FULL cv_lbl_len array (n_cells) for indexing; wall_cells_len
+    # is only a sub-selection for reporting.
+    if grid.cv_lbl_len is not None:
+        coord = np.asarray(grid.cv_lbl_len, dtype=np.float64).ravel()
+    else:
         raise ValueError("Grid attribute 'cv_lbl_len' not available")
 
-    x = np.asarray(coord, dtype=np.float64).ravel()[cvs]
+    x = coord[cvs]
     y = data.ravel()[cvs]
     if x_unit == "cm":
         x = x * 100.0

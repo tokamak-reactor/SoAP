@@ -93,9 +93,20 @@
      Matlab_SPb (R_plot_targets); подпись r − r_sep.
    - Осталось: sep2_fc (вторая сепаратриса, DND) — отдельно.
    - Регрессия 160/160 оба watch'а, pytest 6/6.
-7. **fs_psi для обеих сторон** — psi на флакс-поверхностях (для psi_norm).
-8. **Стенка**: для STR — честный отказ (или внешний .ogr); для UNSTR —
-   fcLbl-сегменты.
+7. ✅ **fs_psi / единые psi-поля** (сделано 06.08.2026):
+   - UNSTR: vx_fpsi (3322), cv_fpsi (3489), fc_fpsi (6550), fs_psi (76) —
+     cv/fc строятся из вершин (mean, как matlab_wg); psi_source="b2fgmtry".
+   - STR: fpsi нули → все psi-поля честно None, psi_source=None;
+     psi появится только с .equ (опция, раздел PSI-координата).
+   - Регрессия 160/160, pytest 6/6.
+8. ✅ **Стенка** (сделано 06.08.2026):
+   - STR: НЕТ стенки — wall_cells/wall_faces = None (честный отказ);
+     extract(along='wall') → понятная ошибка (проверка по imap_cv.ndim,
+     НЕ по is_structured — он врёт на WG-сетках!).
+   - UNSTR: compute_wall по fcLbl 5–8: wall_cells (50), wall_faces (50),
+     wall_cells_len (50); extract(along='wall') работает (координата
+     cv_lbl_len, boundary=1 — вся стенка; сегменты — TODO).
+   - Регрессия 160/160, pytest 6/6.
 
 Проверка нулевых вершин (STR): vx_x имеет мин 0.0 — проверить, нет ли
 «дырявых» вершин (не участвуют ли в fc_vx — если участвуют, координаты
