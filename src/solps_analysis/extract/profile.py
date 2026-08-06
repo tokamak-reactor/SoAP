@@ -189,11 +189,11 @@ def _extract_wall(grid, data, ylabel, boundary=1, x_unit="m"):
 # ── Registry entries ─────────────────────────────────────────────
 EXTRACTOR_REGISTRY["omp"] = {
     "coord_attr": "cv_r", "indices_attr": "outer_midplane_cells",
-    "xlabel": "R [m]", "is_face": False, "description": "Outer midplane",
+    "xlabel": "r − r_sep [m]", "is_face": False, "description": "Outer midplane",
 }
 EXTRACTOR_REGISTRY["imp"] = {
     "coord_attr": "cv_r", "indices_attr": "inner_midplane_cells",
-    "xlabel": "R [m]", "is_face": False, "description": "Inner midplane",
+    "xlabel": "r − r_sep [m]", "is_face": False, "description": "Inner midplane",
 }
 EXTRACTOR_REGISTRY["target_in"] = {
     "coord_attr": "cv_lbl_len", "indices_attr": "inner_target_cells",

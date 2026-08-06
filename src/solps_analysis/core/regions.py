@@ -198,15 +198,21 @@ def compute_radial_coordinate(grid: GridTopology,
 
 def compute_poloidal_coordinate(grid: GridTopology) -> None:
     """Compute poloidal coordinate cv_theta along flux tubes."""
+    if grid.ft_cv_p is None or grid.ft_cv is None:
+        return
     nCv = grid.n_cells
     cv_theta = np.zeros(nCv, dtype=np.float64)
+    ft_cv: np.ndarray = grid.ft_cv
+    ft_cv_p: np.ndarray = grid.ft_cv_p
 
     for iFt in range(grid.n_flux_tubes):
-        start = grid.ft_cv_p[iFt, 0]
-        count = grid.ft_cv_p[iFt, 1]
+        start = int(ft_cv_p[iFt, 0])
+        count = int(ft_cv_p[iFt, 1])
+        # Guard: ft_cv_p may overcount the last tube (structured build bug)
+        count = min(count, len(ft_cv) - start)
         if count < 2:
             continue
-        cvs = grid.ft_cv[start:start + count]
+        cvs = ft_cv[start:start + count]
 
         dist = np.zeros(count, dtype=np.float64)
         for k in range(1, count):
@@ -607,12 +613,17 @@ def _sort_boundary_faces(grid: GridTopology, faces: np.ndarray) -> np.ndarray:
 
 def compute_normalized_coordinates(grid: GridTopology) -> None:
     """Compute normalized poloidal coordinates (0→1 per flux tube/surface)."""
+    if grid.ft_cv_p is None or grid.ft_cv is None:
+        return
     grid.cv_theta_n = np.zeros(grid.n_cells, dtype=np.float64)
     grid.fc_theta_n = np.zeros(grid.n_faces, dtype=np.float64)
+    ft_cv_p: np.ndarray = grid.ft_cv_p
+    ft_fc_p = grid.ft_fc_p
 
     for iFt in range(grid.n_flux_tubes):
-        start = grid.ft_cv_p[iFt, 0]
-        count = grid.ft_cv_p[iFt, 1]
+        start = int(ft_cv_p[iFt, 0])
+        count = int(ft_cv_p[iFt, 1])
+        count = min(count, len(grid.ft_cv) - start)  # guard overcount
         if count < 2:
             continue
         cvs = grid.ft_cv[start:start + count]
@@ -622,8 +633,9 @@ def compute_normalized_coordinates(grid: GridTopology) -> None:
             grid.cv_theta_n[cvs] = (th - th_min) / (th_max - th_min)
 
         # Face version
-        start_f = grid.ft_fc_p[iFt, 0]
-        count_f = grid.ft_fc_p[iFt, 1]
+        start_f = int(ft_fc_p[iFt, 0]) if ft_fc_p is not None else 0
+        count_f = int(ft_fc_p[iFt, 1]) if ft_fc_p is not None else 0
+        count_f = min(count_f, len(grid.ft_fc) - start_f)  # guard overcount
         if count_f > 0 and hasattr(grid, 'fc_theta') and grid.fc_theta is not None:
             fcs = grid.ft_fc[start_f:start_f + count_f]
             th_f = grid.fc_theta[fcs]
@@ -650,14 +662,55 @@ def compute_normalized_coordinates(grid: GridTopology) -> None:
 # =========================================================================
 
 def _shift_coordinates(grid: GridTopology) -> None:
-    """Shift cv_theta to be 0 at OMP, cv_r to be 0 at separatrix."""
+    """Shift cv_theta to be 0 at OMP, cv_r to be 0 at separatrix.
+
+    Port of matlab_wg read_geometry.m lines 495-530:
+    - cvTheta: per poloidal column (flux tube), subtract the value at the
+      OMP cell of that column → 0 at OMP.
+    - cvR: per radial column, subtract the mean value at the separatrix
+      cells of that column → 0 at separatrix (negative in core, positive
+      in SOL).
+    """
     if grid.cv_theta is None or grid.cv_r is None:
         return
 
-    if hasattr(grid, 'outer_midplane_cells') and grid.outer_midplane_cells is not None:
-        omp = grid.outer_midplane_cells
-        omp_theta = np.mean(grid.cv_theta[omp])
-        grid.cv_theta -= omp_theta
+    # --- cv_theta: shift per flux tube to OMP ---
+    omp = getattr(grid, "outer_midplane_cells", None)
+    if omp is not None and grid.ft_cv_p is not None:
+        omp_set = set(np.asarray(omp, dtype=np.intp).ravel().tolist())  # 1-based
+        ft_cv_p: np.ndarray = grid.ft_cv_p
+        for iFt in range(grid.n_flux_tubes):
+            start, count = int(ft_cv_p[iFt, 0]), int(ft_cv_p[iFt, 1])
+            count = min(count, len(grid.ft_cv) - start)  # guard overcount
+            if count < 2:
+                continue
+            cvs = grid.ft_cv[start:start + count]  # 0-based
+            common = [int(c) + 1 for c in cvs if int(c) + 1 in omp_set]
+            if common:
+                grid.cv_theta[cvs] -= np.mean(grid.cv_theta[np.array(common) - 1])
+
+    # --- cv_r: shift per radial column to separatrix ---
+    # Separatrix cells = boundary of the core region (cv_reg==1 cells having
+    # a non-core neighbour). This is more robust than sep_fc / core_sep_fcs,
+    # which may miss branches (e.g. second separatrix in DND).
+    if grid.cv_reg is not None and grid.fc_cv is not None:
+        regs = grid.cv_reg[grid.fc_cv]  # (nFc, 2) region of the two cells
+        is_core = regs == 1
+        sep_faces = is_core[:, 0] != is_core[:, 1]  # exactly one side is core
+        if np.any(sep_faces):
+            sep_cvs = np.unique(grid.fc_cv[sep_faces].ravel())
+            sep_cvs = sep_cvs[sep_cvs >= 0]
+            # build radial columns from radial adjacency (same as compute_radial_coordinate)
+            rad_adj = _build_radial_adjacency(grid)
+            visited = np.zeros(grid.n_cells, dtype=bool)
+            for iCv in range(grid.n_cells):
+                if visited[iCv] or len(rad_adj[iCv]) == 0:
+                    continue
+                col = get_radial_column(iCv, rad_adj, grid.n_core_cells)
+                visited[col] = True
+                inter = np.intersect1d(col, sep_cvs)
+                if len(inter) > 0:
+                    grid.cv_r[col] -= np.mean(grid.cv_r[inter])
 
 
 # =========================================================================

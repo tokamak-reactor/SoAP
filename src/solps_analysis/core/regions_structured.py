@@ -228,6 +228,25 @@ def compute_regions_structured(grid: GridTopology) -> dict:
         xp_list.append(vx_idx)
     grid.xp_vx = np.array(xp_list, dtype=np.int32) if xp_list else None
 
+    # --- Coordinates (unified with unstructured: physical walk + shifts) ---
+    # Structured grids get the SAME cv_r/cv_theta/cv_theta_n as unstructured:
+    # physical walking along flux tubes / radial columns + shift to
+    # separatrix (cv_r) and OMP (cv_theta). See geometry-unified-scheme.md.
+    from solps_analysis.core.regions import (
+        _shift_coordinates,
+        compute_normalized_coordinates,
+        compute_poloidal_coordinate,
+        compute_radial_coordinate,
+    )
+
+    if grid.cv_r is None and grid.cv_ft is not None:
+        compute_radial_coordinate(grid)
+    if grid.cv_theta is None and grid.ft_cv_p is not None:
+        compute_poloidal_coordinate(grid)
+    _shift_coordinates(grid)
+    if grid.ft_cv_p is not None:
+        compute_normalized_coordinates(grid)
+
     return _build_regions_dict_structured(grid)
 
 
