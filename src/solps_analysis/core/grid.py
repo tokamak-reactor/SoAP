@@ -178,7 +178,36 @@ class GridTopology:
     outer_target_cells: np.ndarray | None = None
     inner_target_faces: np.ndarray | None = None
     outer_target_faces: np.ndarray | None = None
+    inner_top_target_cells: np.ndarray | None = None
+    outer_top_target_cells: np.ndarray | None = None
+    inner_top_target_faces: np.ndarray | None = None
+    outer_top_target_faces: np.ndarray | None = None
+    inner_active_target_cells: np.ndarray | None = None
+    outer_active_target_cells: np.ndarray | None = None
+    inner_inactive_target_cells: np.ndarray | None = None
+    outer_inactive_target_cells: np.ndarray | None = None
     separatrix_cells: np.ndarray | None = None
+    # Legacy aliases (kept for compatibility; *_target_* are the unified names)
+    cv_inner_tar: np.ndarray | None = None
+    cv_outer_tar: np.ndarray | None = None
+    fc_inner_tar: np.ndarray | None = None
+    fc_outer_tar: np.ndarray | None = None
+    cv_inner_top_tar: np.ndarray | None = None
+    cv_outer_top_tar: np.ndarray | None = None
+    fc_inner_top_tar: np.ndarray | None = None
+    fc_outer_top_tar: np.ndarray | None = None
+    # Separatrix
+    core_sep_fcs: np.ndarray | None = None
+    core_sep_faces: np.ndarray | None = None
+    sep_fc: np.ndarray | None = None
+    sep_vx: np.ndarray | None = None
+    sep2_fc: np.ndarray | None = None
+    sep2_vx: np.ndarray | None = None
+    # Wall / boundary (unstructured only; structured: honest None)
+    wall_cells: np.ndarray | None = None
+    wall_faces: np.ndarray | None = None
+    wall_cells_len: np.ndarray | None = None
+    wall_cells_vol: np.ndarray | None = None
 
     # --- Version info ---
     version: str = ""

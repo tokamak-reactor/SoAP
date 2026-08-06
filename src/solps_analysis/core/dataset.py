@@ -610,8 +610,49 @@ class SolpsWatch:
         if result:
             for key, val in result.items():
                 setattr(self.grid, key, val)
-            return list(result.keys())
-        return []
+
+        # --- Normalize region naming (unified API) ---
+        # *_target_* are the canonical names; legacy cv_*/fc_*_tar are kept
+        # as aliases. Fill whichever side is missing.
+        g = self.grid
+        alias_pairs = [
+            ("inner_target_cells", "cv_inner_tar"),
+            ("outer_target_cells", "cv_outer_tar"),
+            ("inner_target_faces", "fc_inner_tar"),
+            ("outer_target_faces", "fc_outer_tar"),
+            ("inner_top_target_cells", "cv_inner_top_tar"),
+            ("outer_top_target_cells", "cv_outer_top_tar"),
+            ("inner_top_target_faces", "fc_inner_top_tar"),
+            ("outer_top_target_faces", "fc_outer_top_tar"),
+        ]
+        for canonical, legacy in alias_pairs:
+            cval, lval = getattr(g, canonical, None), getattr(g, legacy, None)
+            if cval is None and lval is not None:
+                setattr(g, canonical, lval)
+            elif lval is None and cval is not None:
+                setattr(g, legacy, cval)
+
+        # Active/inactive targets: the active X-point side is the one the
+        # main power flux goes to. Default: lower X-point is active.
+        if g.inner_target_cells is not None and g.outer_target_cells is not None:
+            active_lower = True
+            if g.xp_vx is not None and len(g.xp_vx) > 0 and g.vx_y is not None:
+                xp = np.asarray(g.xp_vx).ravel()
+                xp = xp[xp >= 0]
+                if len(xp) > 0:
+                    active_lower = g.vx_y[xp[0]] < 0
+            if active_lower:
+                g.inner_active_target_cells = g.inner_target_cells
+                g.outer_active_target_cells = g.outer_target_cells
+                g.inner_inactive_target_cells = g.inner_top_target_cells
+                g.outer_inactive_target_cells = g.outer_top_target_cells
+            else:
+                g.inner_active_target_cells = g.inner_top_target_cells
+                g.outer_active_target_cells = g.outer_top_target_cells
+                g.inner_inactive_target_cells = g.inner_target_cells
+                g.outer_inactive_target_cells = g.outer_target_cells
+
+        return list(result.keys()) if result else []
 
     def plot(self, variable: str, type: str = "1d", **kwargs) -> "PlotResult":
         """Quick ad-hoc plot. Shortcut for Plot1D (or Plot2D in future)."""

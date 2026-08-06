@@ -106,6 +106,7 @@ def extract_profile(
     _require_regions(grid, needed)
 
     coord = getattr(grid, entry["coord_attr"], None)
+    xlabel = entry["xlabel"]
     if coord is None:
         if entry["coord_attr"] in ("cv_r", "cv_theta") and grid.cv_x is not None:
             r = np.sqrt(grid.cv_x ** 2 + grid.cv_y ** 2)
@@ -115,6 +116,12 @@ def extract_profile(
             else:
                 coord = np.arctan2(grid.cv_y, grid.cv_x)
                 setattr(grid, "cv_theta", coord)
+        elif entry["coord_attr"] == "cv_lbl_len" and grid.cv_r is not None:
+            # Structured grids have no cv_lbl_len (wall/plate-length is a
+            # WG concept). MATLAB_SPb plots target profiles on the same y2
+            # (distance from separatrix) — use cv_r as the natural fallback.
+            coord = grid.cv_r
+            xlabel = "r − r_sep [m]"
         else:
             raise ValueError(f"Grid attribute '{entry['coord_attr']}' not available")
 
@@ -134,7 +141,7 @@ def extract_profile(
     x = np.asarray(coord, dtype=np.float64).ravel()[idx_1d]
     y = data.ravel()[idx_1d]
     valid_xy = np.isfinite(x) & np.isfinite(y)
-    return x[valid_xy], y[valid_xy], entry["xlabel"], ylabel
+    return x[valid_xy], y[valid_xy], xlabel, ylabel
 
 
 def _extract_along_ft(grid, data, ft_num, ylabel):

@@ -150,12 +150,17 @@ def compute_regions_structured(grid: GridTopology) -> dict:
     # --- 6. Find targets ---
     # Inner target: cells at iy=2 (bottom), inner side (left of core)
     # Outer target: cells at iy=2 (bottom), outer side (right of core)
+    # Top targets (DDN/upper divertor): row iy=ny+1
     cv_inner_tar = []
     cv_outer_tar = []
     fc_inner_tar = []
     fc_outer_tar = []
+    cv_inner_top_tar = []
+    cv_outer_top_tar = []
+    fc_inner_top_tar = []
+    fc_outer_top_tar = []
 
-    # Find target at bottom (iy=2)
+    # Find target at bottom (iy=2); face on the plate = bottom face (y-face)
     for ix in range(2, nx + 1):
         c = imap[ix, 2]
         if c == 0:
@@ -163,8 +168,27 @@ def compute_regions_structured(grid: GridTopology) -> dict:
         reg = grid.cv_reg[c - 1] if grid.cv_reg is not None else 0
         if reg in (3, 7):  # Inner divertor/PFR
             cv_inner_tar.append(c - 1)
+            if imap_fcy is not None and imap_fcy[ix, 2] > 0:
+                fc_inner_tar.append(imap_fcy[ix, 2] - 1)
         elif reg in (4, 8):  # Outer divertor/PFR
             cv_outer_tar.append(c - 1)
+            if imap_fcy is not None and imap_fcy[ix, 2] > 0:
+                fc_outer_tar.append(imap_fcy[ix, 2] - 1)
+
+    # Top targets (upper divertor plates), if the mesh extends that far
+    for ix in range(2, nx + 1):
+        c = imap[ix, ny + 1]
+        if c == 0:
+            continue
+        reg = grid.cv_reg[c - 1] if grid.cv_reg is not None else 0
+        if reg in (3, 7):
+            cv_inner_top_tar.append(c - 1)
+            if imap_fcy is not None and imap_fcy[ix, ny + 1] > 0:
+                fc_inner_top_tar.append(imap_fcy[ix, ny + 1] - 1)
+        elif reg in (4, 8):
+            cv_outer_top_tar.append(c - 1)
+            if imap_fcy is not None and imap_fcy[ix, ny + 1] > 0:
+                fc_outer_top_tar.append(imap_fcy[ix, ny + 1] - 1)
 
     # If no targets found at bottom, check top (iy = ny+1)
     if not cv_inner_tar and not cv_outer_tar:
@@ -209,6 +233,33 @@ def compute_regions_structured(grid: GridTopology) -> dict:
                             if fc > 0:
                                 core_sep_fcs.append(fc - 1)
 
+    # --- 7b. Full separatrix (core boundary, ALL branches incl. core-PFR) ---
+    # core_sep_fcs above is only core↔SOL (reg 1,5 ↔ 2,6). For the full
+    # separatrix we take every face whose two cells are on different sides
+    # of the core boundary (one in {1,5}, the other not).
+    sep_fc_list = []
+    for iy in range(2, ny + 1):
+        for ix in range(2, nx + 1):
+            c = imap[ix, iy]
+            if c == 0:
+                continue
+            r1 = grid.cv_reg[c - 1] if grid.cv_reg is not None else 0
+            core1 = r1 in (1, 5)
+            if ix < nx + 1:
+                cr = imap[ix + 1, iy]
+                if cr > 0:
+                    r2 = grid.cv_reg[cr - 1] if grid.cv_reg is not None else 0
+                    if core1 != (r2 in (1, 5)):
+                        if imap_fcx is not None and imap_fcx[ix + 1, iy] > 0:
+                            sep_fc_list.append(imap_fcx[ix + 1, iy] - 1)
+            if iy < ny + 1:
+                ct = imap[ix, iy + 1]
+                if ct > 0:
+                    r2 = grid.cv_reg[ct - 1] if grid.cv_reg is not None else 0
+                    if core1 != (r2 in (1, 5)):
+                        if imap_fcy is not None and imap_fcy[ix, iy + 1] > 0:
+                            sep_fc_list.append(imap_fcy[ix, iy + 1] - 1)
+
     # --- 8. Store results ---
     grid.outer_midplane_cells = np.array(outer_midplane_cells, dtype=np.int32) if outer_midplane_cells else None
     grid.inner_midplane_cells = np.array(inner_midplane_cells, dtype=np.int32) if inner_midplane_cells else None
@@ -216,7 +267,27 @@ def compute_regions_structured(grid: GridTopology) -> dict:
     grid.cv_outer_tar = np.array(cv_outer_tar, dtype=np.int32) if cv_outer_tar else None
     grid.fc_inner_tar = np.array(fc_inner_tar, dtype=np.int32) if fc_inner_tar else None
     grid.fc_outer_tar = np.array(fc_outer_tar, dtype=np.int32) if fc_outer_tar else None
+    grid.cv_inner_top_tar = np.array(cv_inner_top_tar, dtype=np.int32) if cv_inner_top_tar else None
+    grid.cv_outer_top_tar = np.array(cv_outer_top_tar, dtype=np.int32) if cv_outer_top_tar else None
+    grid.fc_inner_top_tar = np.array(fc_inner_top_tar, dtype=np.int32) if fc_inner_top_tar else None
+    grid.fc_outer_top_tar = np.array(fc_outer_top_tar, dtype=np.int32) if fc_outer_top_tar else None
     grid.core_sep_fcs = np.array(core_sep_fcs, dtype=np.int32) if core_sep_fcs else None
+
+    # Full separatrix (faces, vertices, adjacent cells)
+    if sep_fc_list:
+        sep_fc = np.array(sorted(set(sep_fc_list)), dtype=np.int32)
+        grid.sep_fc = sep_fc
+        if grid.fc_cv is not None:
+            sep_cvs = np.unique(grid.fc_cv[sep_fc].ravel())
+            grid.separatrix_cells = sep_cvs[sep_cvs >= 0]
+        if grid.fc_vx is not None:
+            sep_vx = np.unique(grid.fc_vx[sep_fc].ravel())
+            grid.sep_vx = sep_vx[sep_vx >= 0]
+    else:
+        grid.sep_fc = None
+        grid.sep_vx = None
+        grid.separatrix_cells = None
+    grid.core_sep_faces = grid.core_sep_fcs  # alias (unified naming)
 
     # X-points (at cut locations)
     xp_list = []

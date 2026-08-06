@@ -389,11 +389,61 @@ def find_xpoints_and_separatrices(grid: GridTopology) -> None:
 # 7. Target identification
 # =========================================================================
 
+def find_target_labels(grid, top: bool = False) -> tuple[int, int]:
+    """Determine (inner, outer) target labels by face coordinates.
+
+    Fallback for grids where the separatrix walk cannot classify targets
+    (e.g. unstructured wide-grid runs where the separatrix touches only
+    two of the four targets). Ported from calc_additional._target_labels
+    with a fix: inner/outer are grouped by X (HFS vs LFS) rather than
+    taking the two largest-|y| labels (which can both be LFS).
+
+    Target labels = boundary labels with many faces (>=10) and large |y|
+    (divertor targets), excluding core-boundary labels (-21/-25).
+    top=False → lower targets (y < 0); top=True → upper targets (y > 0).
+    Inner = smaller mean x (HFS), outer = larger mean x (LFS).
+    Returns (inner_lbl, outer_lbl) in {-1, -1} if not determinable.
+    """
+    if grid.fc_lbl is None or grid.fc_x is None or grid.fc_y is None:
+        return -1, -1
+    lbls = np.unique(grid.fc_lbl[grid.fc_lbl != 0])
+    stats = []
+    for lbl in lbls:
+        if lbl in (-21, -25):
+            continue
+        fcs = np.where(grid.fc_lbl == lbl)[0]
+        if fcs.size < 10:
+            continue  # drop tiny corner labels (e.g. 5, 7)
+        if top:
+            fcs = fcs[grid.fc_y[fcs] > 0]
+        else:
+            fcs = fcs[grid.fc_y[fcs] < 0]
+        if fcs.size == 0:
+            continue
+        my = np.abs(grid.fc_y[fcs]).mean()
+        mx = grid.fc_x[fcs].mean()
+        stats.append((lbl, mx, my))
+    if len(stats) < 2:
+        return -1, -1
+    stats = np.array(stats)
+    # Split into HFS (small x) and LFS (large x) around the median x
+    mid = np.median(stats[:, 1])
+    hfs = stats[stats[:, 1] < mid]
+    lfs = stats[stats[:, 1] > mid]
+    if len(hfs) == 0 or len(lfs) == 0:
+        return -1, -1
+    inner_lbl = int(hfs[np.argmax(hfs[:, 2]), 0])
+    outer_lbl = int(lfs[np.argmax(lfs[:, 2]), 0])
+    return inner_lbl, outer_lbl
+
+
 def find_targets(grid: GridTopology) -> None:
     """Identify inner/outer, upper/lower, active/inactive targets.
     
     Starting from the separatrix, walks boundary faces and classifies
     by Y-coordinate (upper/lower) and X-coordinate (inner/outer).
+    Falls back to label-geometry classification (find_target_labels)
+    when the separatrix walk touches only some of the targets.
     """
     if not hasattr(grid, 'xp_vx') or grid.xp_vx is None or len(grid.xp_vx) == 0:
         return
@@ -451,6 +501,19 @@ def find_targets(grid: GridTopology) -> None:
         inner_tar = int(low[np.argmin(low[:, 1]), 0])
         outer_tar = int(low[np.argmax(low[:, 1]), 0])
 
+    # Fallback: label-geometry classification when the separatrix walk
+    # produced an invalid/partial (inner, outer) pair (wide-grid runs where
+    # the separatrix touches only some targets). Re-derive BOTH when the
+    # pair is degenerate (0, or both equal).
+    if inner_tar == 0 or outer_tar == 0 or inner_tar == outer_tar:
+        fi, fo = find_target_labels(grid, top=False)
+        if fi > 0 and fo > 0 and fi != fo:
+            inner_tar, outer_tar = fi, fo
+    if inner_top == 0 or outer_top == 0 or inner_top == outer_top:
+        fi, fo = find_target_labels(grid, top=True)
+        if fi > 0 and fo > 0 and fi != fo:
+            inner_top, outer_top = fi, fo
+
     # Active/inactive: same side as X-point
     xp_y = grid.vx_y[grid.xp_vx[0]] if len(grid.xp_vx) > 0 else 0
 
@@ -458,7 +521,13 @@ def find_targets(grid: GridTopology) -> None:
 
 
 def _assign_target(grid, inner_tar, outer_tar, inner_top, outer_top, xp_y):
-    """Assign target cell/face indices to grid attributes."""
+    """Assign target cell/face indices to grid attributes.
+
+    cv_*_tar hold the PHYSICAL cells adjacent to the plate (core side,
+    cv <= n_core_cells) — same semantics as the structured grid (matrix
+    rows). Guard cells are excluded (cv_ft == 0, useless for flux-tube
+    queries). Legacy aliases cv_vol_* are kept pointing at the same cells.
+    """
     bound_nums = np.unique(grid.fc_lbl[grid.fc_lbl != 0])
 
     for lbl in bound_nums:
@@ -467,22 +536,21 @@ def _assign_target(grid, inner_tar, outer_tar, inner_top, outer_top, xp_y):
             continue
         cv_lbl = np.unique(grid.fc_cv[fc_lbl].ravel())
         cv_vol = cv_lbl[cv_lbl <= grid.n_core_cells]
-        cv_bnd = cv_lbl[cv_lbl > grid.n_core_cells]
 
         if lbl == inner_tar:
-            grid.cv_inner_tar = cv_bnd
+            grid.cv_inner_tar = cv_vol
             setattr(grid, 'cv_vol_inner_tar', cv_vol)
             grid.fc_inner_tar = fc_lbl
         elif lbl == outer_tar:
-            grid.cv_outer_tar = cv_bnd
+            grid.cv_outer_tar = cv_vol
             setattr(grid, 'cv_vol_outer_tar', cv_vol)
             grid.fc_outer_tar = fc_lbl
         elif lbl == inner_top and inner_top != 0 and inner_top != outer_top:
-            setattr(grid, 'cv_inner_top_tar', cv_bnd)
+            setattr(grid, 'cv_inner_top_tar', cv_vol)
             setattr(grid, 'cv_vol_inner_top_tar', cv_vol)
             setattr(grid, 'fc_inner_top_tar', fc_lbl)
         elif lbl == outer_top and outer_top != 0 and inner_top != outer_top:
-            setattr(grid, 'cv_outer_top_tar', cv_bnd)
+            setattr(grid, 'cv_outer_top_tar', cv_vol)
             setattr(grid, 'cv_vol_outer_top_tar', cv_vol)
             setattr(grid, 'fc_outer_top_tar', fc_lbl)
 
